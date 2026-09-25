@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.test-build/
+.coverage/
+.scratch/
+artifacts/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.tgz
+*.pem
+*.key
+.DS_Store

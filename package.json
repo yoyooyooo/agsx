@@ -1,0 +1,64 @@
+{
+  "name": "ags-cli-rebuild",
+  "version": "0.0.0-rebuild.1",
+  "private": true,
+  "type": "module",
+  "description": "Agent-first, origin-bound AGS client. Independent unreleased rebuild.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "packageManager": "bun@1.4.2",
+  "bin": {
+    "agsx": "dist/cli.js"
+  },
+  "agsx": {
+    "schema": "agsx.package.v1",
+    "releaseState": "unpublished-rebuild"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "docs/protocol.md",
+    "docs/commands.md"
+  ],
+  "workspaces": {
+    "packages": [],
+    "catalog": {
+      "effect": "4.0.0-beta.107",
+      "@effect/platform-node": "4.0.0-beta.107",
+      "@effect/platform-node-shared": "4.0.0-beta.107",
+      "typescript": "7.0.2",
+      "@types/node": "22.20.4",
+      "yaml": "2.8.1",
+      "esbuild": "0.28.2",
+      "prettier": "3.9.9"
+    }
+  },
+  "overrides": {
+    "effect": "catalog:",
+    "@effect/platform-node-shared": "catalog:"
+  },
+  "dependencies": {
+    "effect": "catalog:",
+    "@effect/platform-node": "catalog:",
+    "yaml": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "@types/node": "catalog:",
+    "esbuild": "catalog:",
+    "prettier": "catalog:"
+  },
+  "scripts": {
+    "check": "node scripts/task.mjs check",
+    "build": "node scripts/task.mjs build",
+    "test": "node scripts/task.mjs test",
+    "typecheck": "node scripts/task.mjs typecheck",
+    "format": "node scripts/task.mjs format",
+    "format:check": "node scripts/task.mjs format-check",
+    "prepublishOnly": "node scripts/no-publish.mjs"
+  }
+}
