@@ -1,31 +1,53 @@
-# Contributing to the independent rebuild
+# Contributing
 
-The runtime is Node.js with TypeScript ESM and Effect v4 beta. Bun is used only for installing exact catalog dependencies. The empty workspace package list exists to host Bun's catalog; this is not a server/client monorepo.
+## Scope
+
+Improve the smallest necessary companion boundary. Ordinary repository, PR and CI
+commands belong to official gh; standard API defects belong to AGS. Do not add a
+second `pr` command tree, hidden gh/git shim, private host registry, grant control
+plane or provider credential fallback.
+
+The independent project does not reorganize the AGS Fork or couple its upstream
+sync to a JavaScript monorepo. Changes to the server live in that repository; this
+project consumes its published protocol and tests explicitly selected source pairs.
+
+## Development
 
 ```bash
 bun install --frozen-lockfile
 node scripts/task.mjs check
-node scripts/task.mjs format
 node scripts/task.mjs format-check
 ```
 
-`check` runs strict TypeScript, architecture/dependency checks, standalone assembly and Node tests. It never calls a deployed AGS instance. `node scripts/compat.mjs` is an additional opt-in Linux x64 real-server test with a pinned public artifact and mandatory isolated network namespace.
+Node.js 22.18+ runs build, tests and runtime. Bun is dependency-installation only.
+All versions belong to the package catalog and bun.lock. Keep Effect beta packages
+aligned. `node scripts/task.mjs format` formats source; no unrelated lockfile.
 
-## Ownership
+## Boundary tests
 
-- `src/domain`: schemas, command metadata, public errors and stable types.
-- `src/platform`: bounded HTTP/process/filesystem services, injected through Effect Context/Layer.
-- `src/application`: native AGS operations, routing, identity and reconciliation.
-- `src/operator`: explicitly invoked provider/local-runtime maintenance, never ordinary-user defaults.
-- `src/packaging`: local candidate verification and single-slot installation.
-- `test`: real isolated filesystem/process/Git/HTTP/TLS fixtures and wire-contract cases.
+Tests should demonstrate outcomes: host configuration isolation, actual Git
+credential protocol, ordinary official gh behavior, association vs permission,
+unknown setup cleanup, revoked identity, preserved other accounts and single-slot
+installation. Do not restore tests whose only purpose is preserving retired PR or
+grant command shapes. Fixtures use example.test/loopback and synthetic identities.
 
-Keep identity and effect rules server-owned. A feature is not complete because its command appears in help; update its parity row and exercise a real behavior and relevant negative boundary. Never weaken a check merely because a fixture or old server omits the required fact.
+For joint acceptance, build the candidate and run:
 
-Add dependency versions to the root catalog, use `catalog:` references and update only `bun.lock`. No alternate package lock, floating beta, automatic release, private runner or production credential is allowed. Use Node scripts for compilation, formatting, tests and artifact assembly.
+```bash
+node scripts/compat.mjs --server-checkout /absolute/path/to/agent-git-service
+```
 
-Changes to command input/output belong in the shared schema and protocol notes. Prefer concise predictable JSON, explicit target and bounded pagination; do not grow another flag compatibility parser or general plugin platform without a real use case.
+The selected Fork must contain `scripts/gh-native-acceptance.mjs`. It builds that
+source and downloads a hash-pinned official gh; worker effects run in a new Linux
+user+network namespace with loopback only. Missing namespace support is a hard
+failure, not permission to test against production. This is opt-in because it
+requires Go, Git, OpenSSL, curl, tar, ip and Linux namespace support. No signed
+release or actual cloud-provider workload is implied by synthetic backend tests.
 
-All examples use loopback or `example.test`, synthetic identities and fake credentials. Do not copy the predecessor repository history, personal configuration or native binaries. The proposed project license is Apache-2.0; preserve exact bundled dependency licenses in `THIRD-PARTY-NOTICES.txt`.
+## Contribution and publication
 
-This stage is local and unpublished. Do not remove `private: true`, weaken the publication guard, create a public remote, tag a release, change current machine installations, or delete the predecessor implementation without explicit authorization.
+Keep linear, reviewable commits. Source provenance and actual runtime version are
+separate facts. Do not copy private rollout transcripts, source tokens or machine
+coordinates into the repository. A local branch is not a remote release; source
+changes do not imply installing a new client for the team. Publishing requires a
+separate explicit decision, final package name and provenance/license review.

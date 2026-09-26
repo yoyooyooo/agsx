@@ -1,9 +1,9 @@
 {
-  "name": "ags-cli-rebuild",
+  "name": "agsx",
   "version": "0.0.0-rebuild.1",
   "private": true,
   "type": "module",
-  "description": "Agent-first, origin-bound AGS client. Independent unreleased rebuild.",
+  "description": "Official Git/gh companion for AGS host setup, task identity and cross-tool association.",
   "license": "Apache-2.0",
   "engines": {
     "node": ">=22.18.0"

@@ -1,37 +1,44 @@
-# 重建架构与约束
+# 配套组件的边界
 
-## 决策
+## 目标
 
-独立仓库、单个 TypeScript 包、Node.js 运行。Bun 仅安装，Effect v4 beta.107 与 Node 平台包同版本精确 catalog 固定。`workspaces.packages=[]` 仅承载 catalog，不把服务端移入多包工程。开发命令 `agsx` 和 `AGSX_HOME` 不覆盖当前 ags-cli。
+正常代码协作使用未经修改的官方 Git/gh。根据仓库 origin 和官方 gh 的主机认证配置选择 GitHub 或 AGS，不需要逐命令的 GH_HOST/GH_REPO、包装前缀或 PATH shim。
 
-未选择原样复制旧 bundle：它把个人默认、工作负载身份、运维和双平台 gh engine 绑在一起。未选择全 Go 重写：用户选择 TS/Effect，原生日常 API 也不需要完整 gh。未选择插件平台：目前用三个明确的身份实现足够，未来真实需求再扩展。
+Git 托管、PR 投影、CI 后端与 merge authority 是独立选择。AGS 提供标准接口、后端适配与政策执行；这里不复制 Forgejo API、required CI 判定或第二套 PR 命令模型。
 
-## 使用面
+## 模块
 
-默认 JSON envelope。`schema` 无文件／网络／凭据 I/O，提供每条命令的参数、输入 JSON Schema、风险、结果与必需身份。`--input <file|->` 提供完整结构化输入，常用标量有严格命名参数，未知参数或重复选择在 I/O 前失败。写操作需 `--apply`；默认生成 plan，并不把 dry-run 当服务端授权。
+```text
+src/domain        少量附属命令的 Schema、结构化错误、上下文标识
+src/platform      Node HTTP、进程、输入、文件权限与原子写入
+src/application   setup / doctor / session / association
+src/packaging     本地候选包核验、单槽安装与中断恢复
+```
 
-主要命令族：context、auth、repo、pr、ci、run、git、grant、invocation、ops、package。不保留历史 gh flag/alias parser，也不捆绑定制 gh engine。原先 gh 支持的 list/status/update-branch 等功能用同一原生 AGS transport 重建。机器 schema 是文档与测试的同一来源。
+Effect Context/Layer 拥有可替换资源边界。HTTP、进程和输入均有截止时间、取消、输出上限与作用域释放；不将一个大 Promise 包进 Effect 冒充资源管理。Node 是运行时，Bun 只负责精确 catalog/lock 安装。
 
-## 类型与所有者
+## 官方 gh 的配置是主机权威
 
-- ConfigStore：单一版本的 config.json、明确 Context、唯一 endpoint/alias、原子写入、有限当前记录。不读取旧 profile、Agent Kit、全局 GitHub token、主站 runtime。
-- SecretStore：只读取 Context 明确引用的 owner-only 文件或命名环境变量；常规错误不得包含值。Human 与服务账号独立；Multica 是 opt-in adapter。
-- ProcessRunner：argv-only、绝不 shell 拼接，取消和超时终止子进程、限制捕获输出。Git remote 仍由 Git 拥有，客户端校验远端再提供准确域凭据。
-- HttpTransport：只请求同一声明 endpoint，拒绝认证重定向，支持明确 CA、代理配置；响应有大小与时间上限；写入无自动重试。网络错误后 outcome_unknown 与普通 rejection 分开。
-- Identity：Human/service 向选定 AGS 核验 user_kind；Multica 使用原生 AGS access-grant/transport-session 协议，不读取 Human Secret。repo/operation/head 绑定逐次保留。
-- AgsClient：使用 server-owned 原生 REST 与 provider-evidence；不复制 provider merge/required-check 规则，不在失败时改用宽权限通道。仓库本身的 provider 配置事实从 AGS 获取，未知不能当未配置。
-- OperationJournal：仅存 request fingerprint、invocation ID、精确目标、状态与结果摘要，不存凭据／正文。相同 invocation 重复调用不重复发写请求；未知结果显式 reconcile。
-- Operator：单独模块、显式 operator manifest 和 provider credential，plan/observe/apply 受精确前置摘要保护。不会由普通调用隐式加载机器清单，不运行 provider 数据库后门或 SSH 磁盘回推。
-- Packaging：构建来源／文件清单／hash；单槽安装并保留事务暂存，不保留 releases/current/previous 的历史版本集合。当前仓库 private=true，禁止真实发布。
+setup 不创建第二份 Context 注册表。它读取官方 gh 配置，仅修改显式 AGS 主机，保留其他主机和用户条目。先检查凭据文件权限和旧配置摘要，联网验证原生账号，然后用本组件锁及写前指纹核对提交。官方 gh 自己不遵守本组件锁，因此维护者必须避免并发执行其他 gh auth 配置写入；这里不承诺跨进程生态的原子 CAS。
 
-Effect Context/Layer 注入上述边界；Effect.gen 组织业务，类型化错误保留故障阶段，Scope/finalizer 释放进程、网络、锁和临时凭据。测试替换边界，不把真实应用换成一堆响应 fixture。
+`doctor` 使用官方 gh 解释实际访问结果，配置诊断只输出主机、账号、覆盖变量名称和结果，不复制 token 或原始 subprocess 错误。
 
-## 失败语义
+## 任务启动，不是命令代理
 
-stdout 一个 versioned JSON envelope；stderr 不输出秘密。退出码：0=完成，2=输入错误，3=配置/能力缺口，4=认证/授权拒绝，5=目标冲突，6=结果未知，7=网络/依赖不可用，8=待处理，130=取消。分页返回 cursor 或显式 truncated，不把部分数据冒充全量。
+session.start 在任务开始时，使用官方 gh 中该主机的原生账号创建有界运行凭据。它生成独立的 GH_CONFIG_DIR 和标准 Git URL-scoped credential helper 配置。启动器应用一次环境清单，之后直接运行官方 Git/gh；本组件不接收、解析或代跑那些业务命令。
 
-创建的未知结果按准确分支／PR／仓库读回；merge 按 invocation/exact head 观察。没有服务器幂等支持时，journal 只阻止本客户端重放，不能声称分布式 exactly-once。写前必须先把 intent 刷到磁盘，否则不发请求。
+Git credential helper 是 Git 的标准协议扩展点，不是同名 git 可执行文件。它只响应精确协议/主机/仓库范围内的凭据请求，支持 Git 重复的认证协商 metadata，不接受重复的目标字段。它不执行 shell 用户片段或 Git 命令，不向其他主机给出 token。
 
-## 权限与发布边界
+## 认证与关联
 
-当前迭代只改独立项目。现有 AGS、CLI、团队部署和远端发布不变。缺失 server capability 作为明确限制，而非改造用户生产服务。通用代码采用 Apache-2.0；旧项目代码/二进制不直接复制。个人 endpoint、账号、workspace、主机路径不进入公共示例、测试或发行物。
+原生账号决定权限和 PR 作者。source/Agent/Task/Run 只补充上下文；自报值标为 provisional，空值 unlinked。可选 source 校验由 AGS 的固定 connector 完成；验证后仍必须绑定当前原生账号，不能将任意 metadata 当成换身份或授权的依据。
+
+一个任务 session 可承接 gh 的整组查询和 mutation，不是 per-operation grant。并发任务各有令牌和 gh 配置，不能靠“最近的 task”猜归属。撤销与到期继续拒绝访问，运行令牌不允许读取/生成长期账号凭据。
+
+已有 mat-only 工作负载接入不被这个组件静默复活。任务启动器需要已有原生 AGS Agent 身份；如何由运行平台安全预配该身份属于明确部署接入，不以 Human fallback 代替。
+
+## 未知结果与留存
+
+创建前分配客户端 UUID，并写 starting receipt。POST 结果未知时保留 unknown；相同目录拒绝重新创建。end 使用原账号按 UUID 撤销，不能靠重复 POST 取回秘密。
+
+结束只清理本 session 的确切凭据文件，留下小型 ended receipt。不递归清空调用者目录。生命周期由任务启动器负责，没有隐藏 daemon、无限版本归档或后台自动发版。安装目标仅一个当前槽，产物哈希只证明字节一致，不冒充发行签名。

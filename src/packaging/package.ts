@@ -103,14 +103,9 @@ export function verifyCandidate(directory: string): {
   invariant(
     names.length >= 5 &&
       names.length <= 100 &&
-      [
-        "dist/cli.js",
-        "dist/credential-helper.js",
-        "dist/git-shim.js",
-        "package.json",
-        "LICENSE",
-        "NOTICE",
-      ].every((n) => Object.hasOwn(files, n)),
+      ["dist/cli.js", "dist/credential-helper.js", "package.json", "LICENSE", "NOTICE"].every((n) =>
+        Object.hasOwn(files, n),
+      ),
     "Candidate is missing required runtime or licensing files.",
     "integrity_error",
   );
@@ -275,6 +270,20 @@ export const packageCommand = (name: string, input: Input) =>
       const stage = join(prefix, `.transaction-${randomUUID()}`);
       mkdirSync(stage, { mode: 0o700 });
       try {
+        // The ownership snapshot was read before obtaining the cross-process
+        // lock. A competing installer may have completed in that interval.
+        const lockedPrior = existsSync(receiptFile)
+          ? record(JSON.parse(privateBytes(receiptFile).toString("utf8")))
+          : undefined;
+        const lockedPending = existsSync(marker)
+          ? record(JSON.parse(privateBytes(marker).toString("utf8")))
+          : undefined;
+        invariant(
+          fingerprint(lockedPrior) === fingerprint(prior) &&
+            fingerprint(lockedPending) === fingerprint(pending),
+          "Installation ownership changed before this transaction acquired the lock.",
+          "conflict",
+        );
         // Copy and re-verify before replacing a single destination asset.
         for (const name of [...Object.keys(candidate.manifest.files), "build-manifest.json"]) {
           const dest = join(stage, name);

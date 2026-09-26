@@ -1,48 +1,79 @@
 #!/usr/bin/env node
-/** Private Git helper protocol. Never install it as a generic system helper. */
-import { readFileSync } from "node:fs";
-import { privateBytes } from "./platform/store.js";
+/** Standard Git credential helper only. It is NOT a git/gh shim or dispatcher. */
+import { resolve } from "node:path";
+import { loadSession, sessionCredential } from "./application/session.js";
+import { hostname } from "./domain/model.js";
+import { invariant, record, slug, safeError } from "./domain/errors.js";
 
-export function credentialReply(action: string, input: string, file: string | undefined): string {
-  if (action !== "get" || !file) return "";
-  try {
-    const request = Object.fromEntries(
-      input
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => {
-          const i = line.indexOf("=");
-          return [line.slice(0, i), line.slice(i + 1)];
-        }),
-    );
-    const envelope = JSON.parse(privateBytes(file, 20_000).toString("utf8")) as {
-      schema: string;
-      origin: string;
-      repository: string;
-      token: string;
-    };
-    if (envelope.schema !== "agsx.git-credential.v1" || !/^https?$/.test(request.protocol ?? ""))
-      return "";
-    const origin = new URL(envelope.origin);
-    const path = (request.path ?? "").replace(/^\//, "").replace(/\.git$/, "");
-    if (
-      request.protocol + ":" !== origin.protocol ||
-      request.host !== origin.host ||
-      path !== envelope.repository
-    )
-      return "";
-    if (!envelope.token || /[\r\n\u0000]/.test(envelope.token)) return "";
-    return `username=token\npassword=${envelope.token}\n\n`;
-  } catch {
-    return "";
+const [directory, operation] = process.argv.slice(2);
+if (!directory || operation !== "get") process.exit(0);
+let input = "";
+const timeout = setTimeout(() => {
+  process.stdin.destroy();
+  process.exitCode = 1;
+}, 5000);
+process.stdin.on("data", (chunk) => {
+  input += String(chunk);
+  if (Buffer.byteLength(input) > 16384) {
+    process.stdin.destroy();
+    clearTimeout(timeout);
+    process.exitCode = 1;
   }
-}
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
-  process.stdout.write(
-    credentialReply(
-      process.argv[2] ?? "",
-      readFileSync(0, "utf8"),
-      process.env.AGSX_GIT_CREDENTIAL_FILE,
-    ),
-  );
-}
+});
+process.stdin.on("error", () => {
+  clearTimeout(timeout);
+  process.exitCode = 1;
+});
+process.stdin.on("end", () => {
+  clearTimeout(timeout);
+  try {
+    const values: Record<string, string> = {};
+    for (const line of input.split("\n")) {
+      if (!line) continue;
+      const equal = line.indexOf("=");
+      invariant(equal > 0, "Invalid credential request.");
+      const key = line.slice(0, equal);
+      // Git may send repeated capability[] / wwwauth[] negotiation metadata.
+      // Only the target coordinates decide this helper's response.
+      if (!["protocol", "host", "path"].includes(key)) continue;
+      invariant(!Object.hasOwn(values, key), "Duplicate credential target field.");
+      values[key] = line.slice(equal + 1);
+    }
+    invariant(
+      ["http", "https"].includes(values.protocol ?? "") &&
+        Boolean(values.host) &&
+        Boolean(values.path),
+      "Credential request lacks its exact target.",
+    );
+    const url = new URL(`${values.protocol}://${values.host}`);
+    invariant(
+      !url.username && !url.password && !url.search && !url.hash && url.pathname === "/",
+      "Invalid credential origin.",
+    );
+    const repo = slug(decodeURIComponent(values.path!).replace(/\.git$/, ""));
+    const saved = loadSession(resolve(directory));
+    invariant(
+      saved.phase === "active" &&
+        Date.parse(String(saved.expiresAt)) > Date.now() &&
+        hostname(url.hostname) === saved.host,
+      "Inactive session or different host.",
+    );
+    const scopes = Array.isArray(saved.gitScopes) ? saved.gitScopes : [];
+    invariant(
+      scopes.some((value) => {
+        const scope = record(value);
+        return (
+          scope.origin === url.origin && (scope.repository === null || scope.repository === repo)
+        );
+      }),
+      "Different repository or transport scope.",
+    );
+    const token = sessionCredential(resolve(directory), saved);
+    process.stdout.write(`username=token\npassword=${token}\n\n`);
+  } catch (error) {
+    process.stderr.write(
+      "AGS credential helper: " + safeError(error, "credential_helper").message + "\n",
+    );
+    process.exitCode = 1;
+  }
+});

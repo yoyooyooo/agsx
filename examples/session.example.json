@@ -1,0 +1,11 @@
+{
+  "host": "ags.example.test",
+  "directory": "/private/tasks/task-123/ags",
+  "ttlSeconds": 3600,
+  "context": {
+    "source": "tasks-example",
+    "agent": "agent-example",
+    "task": "task-123",
+    "run": "run-456"
+  }
+}

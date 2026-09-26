@@ -1,56 +1,72 @@
-# AGS CLI · independent rebuild
+# AGS companion
 
-开发命令名 **`agsx`**。这是独立、尚未发布的 AGS 客户端重建；不替换当前 `ags-cli`，不读取旧 profile，不访问维护者的私人部署，也不自动切换任何团队安装。
+这是官方 Git／gh 的配套组件，不是另一套 GitHub CLI。进入哪个仓库，就让官方 gh 根据它的 origin 和已登录主机决定操作 GitHub 还是 AGS。组件不安装 gh/git shim，不代跑普通 PR／CI 命令，也不要求每次执行前设置目标变量。
 
-TypeScript ESM + Effect v4 beta，Node.js 22.18+ 运行。Bun **只安装依赖**：精确版本由 `package.json` 的 catalog 与 `bun.lock` 锁定。构建、测试和命令执行全部使用 Node。没有完整 gh 原生二进制、Bun runtime 或 Agent Kit checkout 依赖。
+当前为未发布的独立开发项目，暂用 `agsx` 作为附属命令名。现有团队 `ags-cli`、认证配置和服务不自动切换。
+
+## 日常工作仍然这样进行
+
+```bash
+git push origin feature
+gh pr create --fill
+gh pr checks --watch
+gh run view --log-failed
+```
+
+AGS 负责标准接口、业务权限和配置选择的 CI 后端。CI 可以是 native、none、Forgejo 或 GitHub Actions；不由本 CLI 决定，也不因 CI 切换而改变 Git 托管、PR 投影或合并权威。仓库含 backup/upstream 时，可用官方 `gh repo set-default origin` 明确一次协作目标。
+
+本项目补充的只有：一次性 gh 主机配置、origin/认证诊断、任务启动时的运行身份、跨工具关联查询，以及可校验的单套安装。
+
+## 开发
+
+Node.js 22.18+ 是运行时，TypeScript ESM，Effect v4 beta 精确锁定。Bun **只安装依赖**。
 
 ```bash
 bun install --frozen-lockfile
 node scripts/task.mjs check
+node scripts/task.mjs format-check
 node dist/cli.js schema
-node dist/cli.js schema --command pr.create
 ```
 
-## 一条路径完成一件事
+当前没有远端发布，不要执行 npm publish。独立 bundle 位于 `.test-build/candidate/`，没有 vendored gh、Bun 运行时或历史版本目录；系统仍需 Node、官方 gh 和 Git。
 
-默认输出 `agsx.result.v1` JSON。`schema` 给出每条命令的精确输入 JSON Schema、作用域和风险，未知命令/参数在读取配置或凭据之前失败。大多数写操作没有 `--apply` 时只返回计划；计划不代表服务端已授权。
+## 一次性接入一个 AGS 主机
+
+主机应提供 gh 能访问的 HTTPS API。Git remote 的 HTTP :6666 可以继续用于代码传输；gh 从 hostname 使用同主机的 HTTPS API。初始化凭据不是每次操作切换账号。
 
 ```bash
-node dist/cli.js context add --name local --configuration '{"endpoint":"http://127.0.0.1:6666","instanceId":"local"}' --apply
-node dist/cli.js context use --name local --apply
-node dist/cli.js auth import --context local --kind human --file /private/operator/token --apply
-node dist/cli.js pr list --context local --repo sample/project
-node dist/cli.js pr create --input ./request.json
-node dist/cli.js pr create --input ./request.json --apply
+node dist/cli.js setup plan --input examples/setup.example.json
+node dist/cli.js setup apply --input examples/setup.example.json --expected-plan <plan-digest> --apply
+node dist/cli.js doctor --network
 ```
 
-`request.json` 示例：
+setup 先向目标 AGS 核验身份，再只更新官方 gh 的该主机配置，保留其他主机。它不写第二份 Context 注册表，不改 remote，不把 GitHub 账号凭据复制给 AGS。设置采用本组件锁与写前指纹检查；不能与另一个 gh auth 写配置操作并发执行。凭据文件 owner-only，目录必须 owner-controlled。
 
-```json
-{
-  "context": "local",
-  "repo": "sample/project",
-  "head": "feature/example",
-  "base": "main",
-  "title": "Example change",
-  "body": "A bounded native AGS request."
-}
+官方 gh 已经完成认证时，不必再执行 setup。凭据可以保留在 gh 支持的配置／系统凭据存储中，组件通过官方 `gh auth token --hostname` 读取明确主机的身份，不猜环境变量中的 token。
+
+## Agent 任务启动接入
+
+```bash
+node dist/cli.js session start --input examples/session.example.json --apply
 ```
 
-`AGSX_HOME` 可改变新的客户端目录，默认 `~/.agsx/`。配置只有 `config.json` 一种格式，密钥使用 owner-only 文件或显式命名的专用环境变量。Human 不需要 Multica；服务账号不冒充 Human；Multica 委派需要显式的信任适配配置。非 loopback HTTP 必须显式 `allowHttp`，不自动关闭 TLS 验证。
+它签发一个继承现有原生账号的有界运行凭据，并生成任务私有 `GH_CONFIG_DIR` 和 `environment.json`。任务启动器在启动 Agent 进程时应用其中的 set/unset **一次**；PATH 和 gh/git 二进制都不改变。Git 使用标准 credential helper 扩展点，不经过 Git 命令代理。
 
-## 功能范围
+普通 gh 的所有 API 请求使用同一个合法运行身份，不逐命令申请 grant。来源 Agent／Task／Run 是关联数据：未验证为 provisional，暂缺为 unlinked；不是权限。并发任务使用不同 session，不通过“Agent 最近的任务”猜关联。可选受信 source 验证由 AGS 完成，不能凭自报 metadata 换成另一个用户。
 
-Context 与认证、原生 Git、仓库创建/读取、PR 创建/列表/读取/评论/修改/审查/关闭/重开/更新分支/合并、CI 检查/有界等待与日志、委派 grant 生命周期、未知效果查询、显式 operator 计划/核验/执行，以及本地构建包验证与单槽安装。
+```bash
+node dist/cli.js session show --directory /private/tasks/task-123/ags
+node dist/cli.js association show --number 123
+node dist/cli.js ci backend
+node dist/cli.js session end --directory /private/tasks/task-123/ags --apply
+```
 
-运维命令只接受明确的 operator manifest；日常用户不会加载 provider 密钥或主站文件系统。没有 Docker 内生成令牌、直接改 provider 数据库或私有 SSH 脚本后门。能力去向与已知边界见 [feature parity](docs/feature-parity.md)。
+初始化需要已建立的原生 AGS 身份。这里没有复活旧 mat-token → per-operation grant 的旁路，也不声称已经修改 Multica 的任务启动器。session 的初始 POST 结果未知时保留 request UUID；end 可用原账号撤销该 UUID，不重新创建任务凭据。令牌不会进入命令输出或环境清单。
 
-`node scripts/task.mjs build` 同时生成常规 `dist/` 与 `.test-build/candidate/` 独立包。独立包不需要外部 Node 依赖，但需要系统 Node/Git；`package verify/install` 校验明确 candidate，安装仅发生在显式选择的空目录或同一安装器拥有的单槽。不提供永久 releases/current/previous 集合。它是本地内容校验，不冒充签名或正式发行。
+## 验证与边界
 
-## 不隐藏失败
-
-服务端决定权限、required CI、provider 与合并规则。缺失政策字段明确返回能力缺口，不由 CLI 猜测。HTTP 错误不换 endpoint，不退回 Human/admin 凭据，不重放未知写入。当前 AGS 的 native merge 没有原子 expected-head 输入，因此不能通过它绕过已有 exact-head provider merge；该限制会清楚返回而不是虚构支持。
-
-仓库当前 `private=true` 且 prepublish 守卫始终拒绝发布。没有生产端到端、公共发布或团队切换验收的声明。现有工具可以继续日常使用；新项目作为后续独立迭代的唯一支点。
-
-更多：[架构](docs/architecture.md) · [命令/配置](docs/commands.md) · [协议与失败语义](docs/protocol.md) · [功能去向](docs/feature-parity.md) · [安全](SECURITY.md)。
+- 默认测试使用临时文件、本地 HTTP/TLS、标准 Git 凭据协议和隔离的 Effect 服务。
+- 两仓真实联调使用 server checkout 的 `scripts/gh-native-acceptance.mjs`、固定官方 gh 发行物以及 loopback-only netns；不继承生产凭据或数据。
+- `docs/feature-parity.md` 记录普通功能交回 gh、标准缺口归服务端、grant 控制面和 shim 退役的理由。
+- `docs/protocol.md` 区分认证、关联、CI 后端与合并权威；没有用关联完成度阻断正常协作。
+- 实验源码、日志和会话凭据不得进入发行物。生产入口、正式发布和团队客户端切换由用户单独决定。

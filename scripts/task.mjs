@@ -52,6 +52,15 @@ function boundary() {
     if (/libexec\/ags-gh|node_modules\/.*agent-kit/.test(source))
       throw new Error("Legacy binary or monorepo coupling was reintroduced.");
   }
+  for (const retired of [
+    "src/git-shim.ts",
+    "src/application/pulls.ts",
+    "src/application/git.ts",
+    "src/application/identity.ts",
+    "src/operator/operator.ts",
+  ])
+    if (existsSync(join(root, retired)))
+      throw new Error("Retired command/shim product surface reintroduced: " + retired);
   for (const name of ["package-lock.json", "yarn.lock", "pnpm-lock.yaml"])
     if (existsSync(join(root, name))) throw new Error("Bun must own the only dependency lock.");
   console.log(
@@ -72,7 +81,6 @@ async function standalone() {
     entryPoints: {
       cli: join(root, "src/cli.ts"),
       "credential-helper": join(root, "src/credential-helper.ts"),
-      "git-shim": join(root, "src/git-shim.ts"),
     },
     outdir: join(directory, "dist"),
     bundle: true,
@@ -144,8 +152,8 @@ async function standalone() {
     "docs/commands.md",
     "docs/protocol.md",
     "docs/feature-parity.md",
-    "examples/context.example.json",
-    "examples/operator.example.json",
+    "examples/setup.example.json",
+    "examples/session.example.json",
   ]) {
     if (!existsSync(join(root, name))) throw new Error(`Missing distribution file ${name}`);
     mkdirSync(dirname(join(directory, name)), { recursive: true });
