@@ -55,7 +55,7 @@ process.stdin.on("end", () => {
     invariant(
       saved.phase === "active" &&
         Date.parse(String(saved.expiresAt)) > Date.now() &&
-        hostname(url.hostname) === saved.host,
+        [saved.host, saved.apiHost].includes(hostname(url.hostname)),
       "Inactive session or different host.",
     );
     const scopes = Array.isArray(saved.gitScopes) ? saved.gitScopes : [];

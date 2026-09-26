@@ -48,6 +48,7 @@ export function loadSession(directory: string): Record<string, unknown> {
     "integrity_error",
   );
   hostname(value.host);
+  hostname(value.apiHost ?? value.host);
   return value;
 }
 export function sessionCredential(directory: string, session: Record<string, unknown>): string {
@@ -73,6 +74,7 @@ function publicSession(session: Record<string, unknown>) {
     phase: session.phase,
     directory: session.directory,
     host: session.host,
+    apiHost: session.apiHost ?? session.host,
     actor: session.actor,
     context: session.context,
     associationStatus: session.associationStatus,
@@ -112,6 +114,7 @@ export const startSession = (input: Input) =>
       return {
         planned: true,
         host: selected.host,
+        apiHost: selected.apiHost,
         directory: prepared.directory,
         context: prepared.context,
         ttlSeconds: prepared.ttl,
@@ -126,6 +129,7 @@ export const startSession = (input: Input) =>
       id,
       directory: prepared.directory,
       host: selected.host,
+      apiHost: selected.apiHost,
       phase: "starting",
       actor,
       context: prepared.context,
@@ -281,6 +285,7 @@ export const startSession = (input: Input) =>
           yamlStringify({
             [selected.host]: {
               user: actor.login,
+              api_host: selected.apiHost === selected.host ? undefined : selected.apiHost,
               oauth_token: receipt.token,
               git_protocol: "https",
             },
@@ -347,7 +352,11 @@ export const endSession = (input: Input) =>
         { gh: saved.gh, ghConfig: saved.parentGhConfig, caFile: saved.caFile },
         String(saved.host),
       );
-      const actor = yield* currentUser("https://" + saved.host, parent.token, parent.caFile);
+      const actor = yield* currentUser(
+        "https://" + (saved.apiHost ?? saved.host),
+        parent.token,
+        parent.caFile,
+      );
       yield* attempt("session_cleanup_actor", () =>
         invariant(
           actor.id === record(saved.actor).id,
@@ -358,7 +367,7 @@ export const endSession = (input: Input) =>
       token = parent.token;
     }
     const response = yield* http.request({
-      endpoint: "https://" + saved.host,
+      endpoint: "https://" + (saved.apiHost ?? saved.host),
       path: "/api/ext/v1/client-runs/" + saved.id,
       method: "DELETE",
       credential: token,

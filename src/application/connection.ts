@@ -121,13 +121,45 @@ export const originTarget = (_input: Input) =>
       return { host, repository, endpoint: "https://" + host, gitOrigin: raw };
     });
   });
+export const requireApiHostSupport = (gh: string, cwd: string) =>
+  Effect.gen(function* () {
+    const processes = yield* ProcessRunner;
+    const version = yield* processes.run({
+      command: gh,
+      args: ["--version"],
+      cwd,
+      timeoutMs: 5000,
+      maxBytes: 16384,
+    });
+    yield* attempt("gh_api_host_support", () => {
+      const found = /^gh version (\d+)\.(\d+)\./.exec(version.stdout);
+      invariant(
+        version.exitCode === 0 &&
+          found &&
+          (Number(found[1]) > 2 || (Number(found[1]) === 2 && Number(found[2]) >= 100)),
+        "Explicit api_host routing requires official gh 2.100 or later.",
+        "unsupported",
+      );
+    });
+  });
 export const target = (input: Input) =>
-  typeof input.host === "string"
-    ? attempt("host", () => {
-        const host = hostname(input.host);
-        return { host, endpoint: "https://" + host, repository: undefined as string | undefined };
-      })
-    : originTarget(input);
+  Effect.gen(function* () {
+    const selected =
+      typeof input.host === "string"
+        ? yield* attempt("host", () => {
+            const host = hostname(input.host);
+            return { host, repository: undefined as string | undefined };
+          })
+        : yield* originTarget(input);
+    const rt = yield* runtime(input);
+    const apiHost = yield* attempt("configured_api_host", () => {
+      const hosts = ghHosts(rt.ghConfig).hosts;
+      const entry = Object.hasOwn(hosts, selected.host) ? record(hosts[selected.host]) : {};
+      return hostname(entry.api_host ?? selected.host);
+    });
+    if (apiHost !== selected.host) yield* requireApiHostSupport(rt.gh, rt.options.cwd);
+    return { ...selected, apiHost, endpoint: "https://" + apiHost };
+  });
 
 export const credential = (input: Input, host: string) =>
   Effect.gen(function* () {
@@ -197,12 +229,12 @@ export const currentUser = (endpoint: string, token: string, caFile?: string) =>
   });
 export const inspectAssociation = (input: Input, ci: boolean) =>
   Effect.gen(function* () {
-    const selected = yield* originTarget(input),
+    const selected = yield* target(input),
       rt = yield* credential(input, selected.host),
       http = yield* HttpTransport;
     const path = ci
-      ? `/api/ext/v1/repos/${repoPath(selected.repository)}/ci`
-      : `/api/ext/v1/repos/${repoPath(selected.repository)}/pulls/${positive(input.number)}/context`;
+      ? `/api/ext/v1/repos/${repoPath(text(selected.repository))}/ci`
+      : `/api/ext/v1/repos/${repoPath(text(selected.repository))}/pulls/${positive(input.number)}/context`;
     const response = yield* http.request({
       endpoint: selected.endpoint,
       path,

@@ -33,13 +33,13 @@ export const COMMANDS: readonly CommandSpec[] = [
     "setup.plan",
     "Inspect one official gh host configuration and plan an explicit credential import.",
     "read",
-    { ...gh, host: S, tokenFile: S },
+    { ...gh, host: S, apiHost: optional(S), tokenFile: S },
   ),
   command(
     "setup.apply",
     "Verify one native AGS identity and CAS-update only its official gh host entry.",
     "local-write",
-    { ...gh, host: S, tokenFile: S, expectedPlan: S },
+    { ...gh, host: S, apiHost: optional(S), tokenFile: S, expectedPlan: S },
   ),
   command(
     "doctor",

@@ -32,7 +32,7 @@ node dist/cli.js schema
 
 ## 一次性接入一个 AGS 主机
 
-主机应提供 gh 能访问的 HTTPS API。Git remote 的 HTTP :6666 可以继续用于代码传输；gh 从 hostname 使用同主机的 HTTPS API。初始化凭据不是每次操作切换账号。
+主机应提供 gh 能访问的 HTTPS API。Git remote 的 HTTP :6666 可以继续用于代码传输；gh 默认从 hostname 使用同主机的 HTTPS API。已有短域名或 HTTPS 网关时，setup 可以显式传 `--api-host api-ags.example.test`，写入官方 gh 的按主机 `api_host` 配置；需要 gh 2.100+。这是一次性配置，不是逐命令设置 GH_HOST/GH_REPO，也不修改 Git remote。官方将 api_host 标为实验性且不是安全边界：原主机与 API 主机必须同属可信部署，不能用它承诺凭据只到达其中一个地址。初始化凭据不是每次操作切换账号。
 
 ```bash
 node dist/cli.js setup plan --input examples/setup.example.json

@@ -11,7 +11,13 @@ import {
   privateDirectory,
   withLock,
 } from "../platform/store.js";
-import { checkedToken, currentUser, ghHosts, runtime } from "./connection.js";
+import {
+  checkedToken,
+  currentUser,
+  ghHosts,
+  runtime,
+  requireApiHostSupport,
+} from "./connection.js";
 
 export const setup = (input: Input, apply: boolean) =>
   Effect.gen(function* () {
@@ -22,19 +28,21 @@ export const setup = (input: Input, apply: boolean) =>
         host !== "github.com" && !host.endsWith(".ghe.com"),
         "GitHub account setup remains owned by gh auth login; this setup is for AGS hosts.",
       );
-      return { host, tokenFile: resolve(rt.options.cwd, String(input.tokenFile)) };
+      const apiHost = hostname(input.apiHost ?? host);
+      return { host, apiHost, tokenFile: resolve(rt.options.cwd, String(input.tokenFile)) };
     });
     const observed = yield* attempt("setup_observe", () => {
       const current = ghHosts(rt.ghConfig),
         entry = Object.hasOwn(current.hosts, target.host) ? record(current.hosts[target.host]) : {};
       invariant(
-        !entry.api_host || entry.api_host === target.host,
-        "Existing gh api_host differs from this origin; reconcile it explicitly before importing a credential.",
+        !entry.api_host || entry.api_host === target.apiHost,
+        "Existing gh api_host differs from the plan; name it explicitly with --api-host before importing a credential.",
         "config_error",
       );
       const token = checkedToken(privateBytes(target.tokenFile, 16384).toString("utf8"));
       const hash = fingerprint({
         host: target.host,
+        apiHost: target.apiHost,
         directory: rt.ghConfig,
         previous: current.bytes,
         credential: fingerprint(token),
@@ -46,8 +54,10 @@ export const setup = (input: Input, apply: boolean) =>
         previousUser: typeof entry.user === "string" ? entry.user : null,
       };
     });
+    if (target.apiHost !== target.host) yield* requireApiHostSupport(rt.gh, rt.options.cwd);
     const plan = {
       host: target.host,
+      apiHost: target.apiHost,
       ghConfig: rt.ghConfig,
       credentialFile: target.tokenFile,
       previousUser: observed.previousUser,
@@ -66,7 +76,7 @@ export const setup = (input: Input, apply: boolean) =>
         "conflict",
       ),
     );
-    const user = yield* currentUser("https://" + target.host, observed.token, rt.caFile);
+    const user = yield* currentUser("https://" + target.apiHost, observed.token, rt.caFile);
     yield* attempt("setup_commit", () => {
       privateDirectory(rt.ghConfig, true, false);
       withLock(join(rt.ghConfig, ".agsx-setup.lock"), () => {
@@ -84,6 +94,7 @@ export const setup = (input: Input, apply: boolean) =>
         const prior = Object.hasOwn(users, user.login) ? record(users[user.login]) : {};
         const entry = {
           ...existing,
+          api_host: target.apiHost === target.host ? undefined : target.apiHost,
           user: user.login,
           oauth_token: observed.token,
           git_protocol: existing.git_protocol ?? "https",

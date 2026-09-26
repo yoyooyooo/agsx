@@ -13,6 +13,11 @@ owner before publication; do not include credentials or production transcripts.
   output internally, and never serializes raw stdout on failures.
 - No request redirects to another origin. Custom CA is explicit; certificate
   checks cannot be disabled. Display/provider URLs never select authentication.
+- Explicit `api_host` supports a trusted API gateway with official gh 2.100+.
+  The canonical Git host remains the credential owner. Both endpoints must be
+  trusted: official gh calls this experimental and not a security boundary.
+  Setup binds the chosen API host into its plan; sessions preserve that endpoint
+  for readback/revocation and reject an installed gh that cannot honor it.
 - Hostnames are canonical and port-free for standard HTTPS APIs. Auxiliary
   association queries require a canonical origin. SSH alias handling and complete
   multi-remote selection remain official gh responsibilities.
@@ -36,7 +41,8 @@ credentials, directories and run IDs. The native parent token is not copied.
 
 Git's standard credential helper protocol is target scoped and does not execute
 Git commands. It ignores repeated non-target negotiation fields, rejects duplicate
-target coordinates, and returns nothing for a different host/repository. Neither
+target coordinates, and returns nothing outside the explicitly recorded Git/API
+transport and repository scopes. Neither
 this helper nor GH_CONFIG_DIR is an OS sandbox: code running as the same OS user
 may independently access that user's other files or credential stores. The
 component does not claim system keyring isolation or containment of malicious
