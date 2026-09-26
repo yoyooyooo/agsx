@@ -1,13 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync, readFileSync } from "node:fs";
+import { writeFileSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Effect } from "effect";
 import { parse as parseYaml } from "yaml";
 import { fixture, provided, child } from "./helpers.mjs";
 import { setup } from "../dist/application/setup.js";
 import { startSession, endSession } from "../dist/application/session.js";
-import { inspectAssociation } from "../dist/application/connection.js";
+import { inspectAssociation, runtime } from "../dist/application/connection.js";
+
+test("explicit shell executable choice avoids a system-gh downgrade without changing routing", async (t) => {
+  const f = fixture(t),
+    p = ports();
+  f.env.AGSX_GH = process.execPath;
+  const chosen = await provided(f, runtime({}), p.transport, p.processes);
+  assert.equal(chosen.gh, realpathSync(process.execPath));
+  assert.equal(p.requests.length, 0);
+  assert.equal(p.commands.length, 0);
+  f.env.AGSX_GH = "relative-or-untrusted";
+  await assert.rejects(
+    provided(f, runtime({}), p.transport, p.processes),
+    (e) => e.code === "config_error",
+  );
+  const explicit = await provided(f, runtime({ gh: process.execPath }), p.transport, p.processes);
+  assert.equal(explicit.gh, realpathSync(process.execPath));
+});
 
 function ports() {
   const requests = [],

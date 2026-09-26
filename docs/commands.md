@@ -29,7 +29,9 @@ agsx
 
 默认输出 `agsx.result.v1` JSON。附属写入需要 `--apply`；它不改变原版 gh 的执行语义。session.start 未 apply 时不读取凭据或创建会话目录。setup.plan 是显式本地配置/凭据观察，返回摘要不含凭据值；doctor 默认不联网，network 才调用原版 gh 查看仓库。
 
-`--gh` 可明确选择已安装官方 gh 的绝对路径；`--gh-config` 选择官方配置目录；`--ca-file` 只增加明确的证书信任，不关闭 TLS 校验。host 使用 hostname，不带协议或端口；默认 HTTPS API 地址由该 hostname 产生。setup 的 `--api-host` 可显式指定受信任的独立 API hostname，保存在官方 gh 配置中，要求 gh 2.100+；后续 session 和关联查询复用这份配置，原主机仍拥有认证身份。它不是安全边界，不会阻止 gh 访问原主机。远端返回的展示 URL 不能改认证目标。
+`--gh` 可明确选择已安装官方 gh 的绝对路径；也可在试用 shell 或任务启动时一次性设置 `AGSX_GH`，优先级为 `--gh`、`AGSX_GH`、已知系统路径。它只选择可执行文件，不选择仓库或认证目标；显式路径不可用时不静默回退。`--gh-config` 选择官方配置目录；`--ca-file` 只增加明确的证书信任，不关闭 TLS 校验。host 使用 hostname，不带协议或端口；默认 HTTPS API 地址由该 hostname 产生。setup 的 `--api-host` 可显式指定受信任的独立 API hostname，保存在官方 gh 配置中，要求 gh 2.100+；后续 session 和关联查询复用这份配置，原主机仍拥有认证身份。它不是安全边界，不会阻止 gh 访问原主机。远端返回的展示 URL 不能改认证目标。
+
+独立 API 网关还需要服务器显式设置 `AGS_API_BASE_URL`，使 jobs、logs、分页等机器跟随的 API 链接指向网关，而不是把 HTTP Git 端口强改成 HTTPS。Git remote 和回调的原 `BASE_URL` 不必变化。
 
 没有 Context 的第二份全局默认配置。主机登录归官方 gh；source/repo 选择不会从旧 ~/.ags-cli、Agent Kit registry 或私有部署 manifest 猜测。
 

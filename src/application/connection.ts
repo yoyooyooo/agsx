@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { accessSync, constants, existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import {
   attempt,
@@ -43,7 +43,17 @@ export const runtime = (input: Input) =>
   Effect.gen(function* () {
     const { options } = yield* Settings;
     const gh = yield* attempt("gh_executable", () => {
-      const explicit = typeof input.gh === "string" ? resolve(options.cwd, input.gh) : undefined;
+      const configured = options.env.AGSX_GH;
+      if (typeof input.gh !== "string" && configured !== undefined) {
+        invariant(
+          isAbsolute(configured) && !/[\r\n\u0000]/.test(configured),
+          "AGSX_GH must name an absolute executable path.",
+          "config_error",
+        );
+      }
+      // One explicit program choice at shell/task setup. It never selects a
+      // repository, credential or API host, and does not replace official gh.
+      const explicit = typeof input.gh === "string" ? resolve(options.cwd, input.gh) : configured;
       const candidates = explicit
         ? [explicit]
         : ["/usr/bin/gh", "/usr/local/bin/gh", "/opt/homebrew/bin/gh"];
@@ -57,7 +67,7 @@ export const runtime = (input: Input) =>
       });
       invariant(
         selected,
-        "Official gh must be installed; supply its absolute path with --gh when needed.",
+        "Official gh must be installed; choose its absolute path with --gh or AGSX_GH.",
         "unsupported",
       );
       return realpathSync(selected);
