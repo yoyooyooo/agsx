@@ -12,7 +12,7 @@
 - session 在任务边界生成独立 GH_CONFIG_DIR 和标准 Git credential-helper 配置，不改变 PATH，也不污染并发任务。任何 parent/source/session token 不得出现在命令行、stdout、证据或普通日志中。
 - HTTP/进程/文件有超时、容量、取消与资源释放。未知写结果不自动重发。凭据文件 owner-only，不跟随符号链接；配置里的 API 目标不能由远端返回 URL 改写。
 - 测试默认隔离、无生产凭据。真实官方 gh 联调用 loopback-only netns 和一次性 AGS 数据；没有远端 CI 就不能声称远端验证完成。
-- npm 包名为 `@yoyooyoooyoooo/agsx`。维护者使用普通 npm 发布流程，CLI 不实现发布、安装、版本切换或自更新。不得覆盖旧 ags-cli；生产服务切换须独立验收。
+- npm 包名为 `@yoyooyoooyoooo/agsx`。公开仓库是 `yoyooyooo/agsx`。`0.2.0` 是维护者本机的第一次网页授权发布。之后的版本只能由 `bun run release -- <version>` 推送不可变 tag，再由 GitHub Actions 的 `publish.yml` 用 Trusted Publishing 发布。不要在本机再 `npm publish`，也不要把根工作区打进 registry。CLI 不实现发布、安装、版本切换或自更新。不得覆盖旧 ags-cli；生产服务切换须独立验收。
 
 ## 开发
 

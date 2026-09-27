@@ -4,7 +4,7 @@ agsx 是官方 Git／gh 的独立附属组件。当前 0.2.0 源码保留 setup�
 
 ## 发行与安装
 
-只通过 npm 发布和安装。没有内置 package/install/upgrade/release 命令，没有版本切换或自更新。根目录是使用 Bun catalog 的 private 开发工作区；`npm run build` 生成独立包，维护者使用普通 `npm publish .test-build/candidate --access public` 发布。版本存在与否以 registry 实际结果为准，源码版本不冒充已发布版本。
+只通过 npm 发布和安装。没有内置 package/install/upgrade/release 命令，没有版本切换或自更新。根目录是使用 Bun catalog 的 private 开发工作区；`npm run build` 生成独立包，这个目录不是发布入口。`0.2.0` 是维护者本机的第一次发布。之后的版本由 annotated tag 触发 GitHub Actions，用 Trusted Publishing 发布构建产物。版本存在与否以 registry 实际结果为准，源码版本不冒充已发布版本。
 
 运行使用 Node.js 22.18+；Bun 只负责 install。`npm test` 包含真实 npm pack 和隔离 global install，验证不依赖源码或开发 node_modules 即可运行。包不携带官方 gh、生产凭据或安装历史。
 

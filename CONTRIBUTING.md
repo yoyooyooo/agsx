@@ -49,5 +49,24 @@ release or actual cloud-provider workload is implied by synthetic backend tests.
 Keep linear, reviewable commits. Source provenance and actual runtime version are
 separate facts. Do not copy private rollout transcripts, source tokens or machine
 coordinates into the repository. A local branch is not a remote release; source
-changes do not imply installing a new client for the team. Publishing requires a
-separate explicit decision, final package name and provenance/license review.
+changes do not imply installing a new client for the team.
+
+The public repository is https://github.com/yoyooyooo/agsx. Issues go there.
+`0.2.0` was published from a maintainer machine so the npm name could exist.
+Later versions are not published locally.
+
+From a clean `main` that matches `origin/main`:
+
+```bash
+bun run release:precheck -- 0.2.1
+bun run release -- 0.2.1
+```
+
+`release` pushes only the annotated tag `v0.2.1`. It does not push `main` and
+does not run `npm publish`. GitHub Actions `publish.yml` builds the standalone
+package, rejects a tarball that still contains `catalog:`, and publishes it
+with Trusted Publishing. The GitHub environment name is `npm-publish`. A pushed
+tag is immutable. If that attempt fails and `npm view` still returns 404 for
+the version, choose a new version. Do not move the tag. A GitHub Release is
+created only after the registry readback succeeds. If publish succeeded and
+only the Release failed, rerun the workflow on that same tag.

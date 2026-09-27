@@ -1,8 +1,8 @@
 # agsx
 
-官方 Git／gh 的配套组件，不是第二套 GitHub CLI。普通 repo、PR、CI 操作仍使用官方 `git` 和 `gh`；agsx 只负责一次性 AGS 接入、诊断、任务运行身份及跨工具关联。没有 gh/git shim，没有内置安装器、版本切换、自更新或发布命令。
+[English](./README.md) | [中文](./README.zh-CN.md)
 
-## 安装与升级
+agsx connects an AGS host to the official `git` and `gh` you already use. It does not replace them.
 
 ```bash
 npm install -g @yoyooyoooyoooo/agsx
@@ -10,43 +10,78 @@ agsx --version
 agsx schema
 ```
 
-需要固定版本时使用 `npm install -g @yoyooyoooyoooo/agsx@0.2.0`。再次安装其他版本也是 npm 的职责。需 Node.js 22.18+、Git 和官方 gh；独立 API hostname 的 `api_host` 设置要求 gh 2.100+。安装软件不会自动更换账号、修改 remote 或升级 AGS 服务端。
+Requires Node.js 22.18 or newer, Git, and official GitHub CLI.
 
-## 日常工作
+## The problem
+
+`git` and `gh` already create repositories, pull requests, and CI runs. An AGS host still needs three extra things: a one-time host entry in official gh, a task-scoped login that does not overwrite your normal GitHub login, and a read-only lookup of the Forgejo link after `gh pr create`. Wrapping gh to get those would become a second CLI, with its own PR commands and its own credentials.
+
+## What you get
+
+- `setup plan` shows the host change. `setup apply` writes one official gh host after checking the native account.
+- `doctor` reports origin, gh config, and override variables. It stays offline unless you pass `--network`.
+- `session start` prepares one task identity. `session end` revokes that run credential.
+- `association collect` reads the AGS and Forgejo links for a pull request gh already created.
+- `ci backend` shows which CI backend the server selected. It does not proxy checks or logs.
+
+agsx has no pull request, CI, install, upgrade, or self-update commands.
+
+## How it works
+
+The npm package is one bundled Node program. The repository root is a private Bun workspace used for development. npm does not install that workspace.
+
+agsx calls the `gh` binary on your machine. Setup changes one host in gh's own config and leaves every other host alone. A task session gets its own `GH_CONFIG_DIR` and a normal Git credential helper. It does not change `PATH`. Association only sends GET requests for a pull request that already exists. If the Forgejo projection is still pending, the result says so. It does not run `gh pr create` again.
+
+## Install
 
 ```bash
-git push origin HEAD
-pr_url="$(gh pr create --base main --title '本次修改' --body '修改说明')" &&
-  agsx association collect --url "$pr_url" --wait-seconds 5
-gh pr checks
-gh run list
+npm install -g @yoyooyoooyoooo/agsx
 ```
 
-原版 gh 创建真正的 AGS PR，收集器只读关联；投影未完成时返回 pending，不猜 Forgejo 编号，不因读取失败重开 PR。AGS 与 Forgejo 地址各自保留。GitHub 项目仍正常使用同一个官方 gh。
+Pin a version with `npm install -g @yoyooyoooyoooo/agsx@0.2.0`. Upgrade and remove it with npm. Installing the package does not switch accounts, rewrite remotes, or upgrade an AGS server.
 
-## 接入与诊断
+An explicit API hostname in gh config needs official gh 2.100 or newer. That setting is not a security boundary.
+
+## Quick start
+
+From a repository whose `origin` is the host you want to connect:
 
 ```bash
 agsx setup plan --host ags.example.test --token-file /private/ags.token
-# 根据 plan 的 expectedPlan 执行明确的 setup apply。
-agsx doctor --network
-agsx association show --number 123
-agsx ci backend
+agsx doctor
+agsx schema
 ```
 
-使用默认 gh 配置，不需要常驻 GH_HOST、GH_REPO、GH_CONFIG_DIR 或 AGSX_GH。仅并发任务的会话边界可显式使用任务私有配置，避免账号互相覆盖；日常个人登录不需要隔离 shell。Fork／多 remote 仓库通过官方 `gh repo set-default origin` 明确默认协作目标。
+`setup plan` does not write config. Apply only the plan you just reviewed. `agsx schema` prints the command list as JSON.
 
-更多输入以 `agsx schema --command <command>` 为准；见 [命令](docs/commands.md)、[协议](docs/protocol.md) 和 [架构](docs/architecture.md)。
+Create the pull request with gh, then collect the two links:
 
-## 开发与 npm 发布
+```bash
+git push origin HEAD
+pr_url="$(gh pr create --base main --title 'A change' --body 'What changed')" &&
+  agsx association collect --url "$pr_url" --wait-seconds 5
+```
+
+The `&&` matters. If gh fails, collect does not run. If the projection is not ready, collect returns pending. It does not guess a Forgejo number and it does not open a second pull request.
+
+Command details live in [docs/commands.md](docs/commands.md). The wire contract is [docs/protocol.md](docs/protocol.md).
+
+## Security and limits
+
+Credentials stay with official gh. agsx does not take `GH_TOKEN` as a fallback, and it does not follow a display URL onto another host. A task directory is private to that task. This is not an OS sandbox. See [SECURITY.md](SECURITY.md).
+
+agsx does not manage global npm, replace `git` or `gh`, or retain old installation directories. `0.2.0` was published from a maintainer machine and has no npm provenance. Later versions are published by the tag workflow in `.github/workflows/publish.yml`.
+
+## Develop
 
 ```bash
 bun install --frozen-lockfile
 npm test
-npm run build
-npm publish .test-build/candidate --access public
+npm run format:check
 ```
 
-Bun 只安装开发依赖，版本锁在 catalog／bun.lock；编译、测试、构建与运行使用 Node。根工作区有 catalog 开发依赖且保留 private，发布的是不带开发依赖的独立 npm 包。固定构建目录只是可再生成的开发输出，不是运行安装路径。普通 npm 负责打包、registry 发布和全局安装，不另设 release 管理层。
+Bun only installs the locked development dependencies. Node runs the tests and the CLI. The next npm release is an annotated tag, not a local `npm publish`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-维护者先提交源码再构建发布；build-manifest 只记录来源与构建信息，不是额外的客户端安装协议。发行包不包含个人配置、token、测试工作树、数据库或官方 gh 二进制。具体版本是否已发布以 npm registry 为准。
+## License
+
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

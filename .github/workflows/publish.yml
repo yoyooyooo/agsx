@@ -1,0 +1,403 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish or repair, for example v0.1.2
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    environment: npm-publish
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Validate release metadata
+        run: |
+          release_tag="${{ github.event.inputs.tag }}"
+          if [ -z "$release_tag" ]; then
+            release_tag="${GITHUB_REF_NAME}"
+          fi
+          package_name="$(node -p "require('./package.json').name")"
+          package_version="$(node -p "require('./package.json').version")"
+          expected_tag="v${package_version}"
+          if [ "$package_name" != "@yoyooyoooyoooo/agsx" ]; then
+            echo "Expected package name @yoyooyoooyoooo/agsx, got: $package_name" >&2
+            exit 1
+          fi
+          case "$package_version" in
+            *-*)
+              echo "Prerelease versions are disabled for this workflow: $package_version" >&2
+              exit 1
+              ;;
+          esac
+          if [ "$release_tag" != "$expected_tag" ]; then
+            echo "Release tag must match package version. tag=$release_tag expected=$expected_tag" >&2
+            exit 1
+          fi
+          git fetch origin main --no-tags
+          release_commit="$(git rev-list -n 1 "$release_tag")"
+          release_line="$(git rev-list --parents -n 1 "$release_commit")"
+          set -- $release_line
+          if [ "$#" -ne 2 ]; then
+            echo "Release tag must point to one generated release commit with exactly one parent." >&2
+            exit 1
+          fi
+          release_parent="$2"
+          main_commit="$(git rev-parse origin/main)"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            if [ "$release_parent" != "$main_commit" ]; then
+              echo "A new release commit parent must equal the exact current origin/main commit." >&2
+              echo "parent=$release_parent main=$main_commit" >&2
+              exit 1
+            fi
+          elif ! git merge-base --is-ancestor "$release_parent" "$main_commit"; then
+            echo "A repair release parent must remain reachable from origin/main." >&2
+            echo "parent=$release_parent main=$main_commit" >&2
+            exit 1
+          fi
+          while IFS= read -r changed_path; do
+            case "$changed_path" in
+              package.json|bun.lock) ;;
+              *)
+                echo "Release commit changed an unauthorized path: $changed_path" >&2
+                exit 1
+                ;;
+            esac
+          done <<EOF_CHANGED_PATHS
+          $(git diff-tree --no-commit-id --name-only -r "$release_commit")
+          EOF_CHANGED_PATHS
+          node - "$release_parent" package.json <<'NODE_RELEASE_JSON'
+          const { execFileSync } = require("node:child_process");
+          const { readFileSync } = require("node:fs");
+          const { isDeepStrictEqual } = require("node:util");
+          const [parent, ...paths] = process.argv.slice(2);
+          for (const path of paths) {
+            const before = JSON.parse(execFileSync("git", ["show", `${parent}:${path}`], { encoding: "utf8" }));
+            const after = JSON.parse(readFileSync(path, "utf8"));
+            delete before.version;
+            delete after.version;
+            if (!isDeepStrictEqual(before, after)) {
+              throw new Error(`Release commit changed ${path} beyond its version field`);
+            }
+          }
+          NODE_RELEASE_JSON
+          case "$package_version" in
+            *-*) npm_dist_tag="next" ;;
+            *) npm_dist_tag="latest" ;;
+          esac
+          echo "PACKAGE_NAME=$package_name" >> "$GITHUB_ENV"
+          echo "PACKAGE_VERSION=$package_version" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+          echo "RELEASE_COMMIT=$release_commit" >> "$GITHUB_ENV"
+          echo "NPM_DIST_TAG=$npm_dist_tag" >> "$GITHUB_ENV"
+          if npm view "${package_name}@${package_version}" version --registry https://registry.npmjs.org >/dev/null 2>/tmp/npm-presence.err; then
+            NPM_ALREADY_PUBLISHED=true
+            echo "NPM_ALREADY_PUBLISHED=true" >> "$GITHUB_ENV"
+            echo "${package_name}@${package_version} already exists on npm."
+          elif grep -Eqi 'E404|404 Not Found|is not in this registry' /tmp/npm-presence.err; then
+            NPM_ALREADY_PUBLISHED=false
+            echo "NPM_ALREADY_PUBLISHED=false" >> "$GITHUB_ENV"
+          else
+            echo "Unable to prove whether ${package_name}@${package_version} exists." >&2
+            cat /tmp/npm-presence.err >&2
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ github.ref_name }}" != "$release_tag" ]; then
+              echo "Repair must be dispatched on the immutable tag ref." >&2
+              exit 1
+            fi
+            if [ "$NPM_ALREADY_PUBLISHED" != "true" ]; then
+              echo "Manual dispatch is repair-only and cannot perform a first npm publication." >&2
+              exit 1
+            fi
+          fi
+          if [ "$NPM_ALREADY_PUBLISHED" = "false" ]; then
+            if current_channel_version="$(npm view "$package_name@$npm_dist_tag" version --registry https://registry.npmjs.org 2>/tmp/npm-channel.err)"; then
+              node - "$package_version" "$current_channel_version" <<'NODE_SEMVER'
+          const pattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?$/;
+          function parse(value) {
+            const match = value.match(pattern);
+            if (!match) throw new Error(`Invalid semver: ${value}`);
+            return { core: [BigInt(match[1]), BigInt(match[2]), BigInt(match[3])], pre: match[4]?.split(".") ?? [] };
+          }
+          function compare(left, right) {
+            const l = parse(left); const r = parse(right);
+            for (let index = 0; index < 3; index += 1) {
+              if (l.core[index] !== r.core[index]) return l.core[index] < r.core[index] ? -1 : 1;
+            }
+            if (l.pre.length === 0) return r.pre.length === 0 ? 0 : 1;
+            if (r.pre.length === 0) return -1;
+            for (let index = 0; index < Math.max(l.pre.length, r.pre.length); index += 1) {
+              const a = l.pre[index]; const b = r.pre[index];
+              if (a === undefined) return -1; if (b === undefined) return 1; if (a === b) continue;
+              const an = /^\d+$/.test(a); const bn = /^\d+$/.test(b);
+              if (an && bn) return a.length === b.length ? (a < b ? -1 : 1) : a.length - b.length;
+              if (an) return -1; if (bn) return 1;
+              return a < b ? -1 : 1;
+            }
+            return 0;
+          }
+          const [next, current] = process.argv.slice(2);
+          if (compare(next, current) <= 0) throw new Error(`Refusing to move npm channel backward: ${next} <= ${current}`);
+          NODE_SEMVER
+            elif ! grep -Eqi 'E404|404 Not Found|is not in this registry' /tmp/npm-channel.err; then
+              echo "Unable to read current npm channel $npm_dist_tag." >&2
+              cat /tmp/npm-channel.err >&2
+              exit 1
+            fi
+          fi
+      - name: Check
+        run: bun run release:check
+      - name: Package tarball
+        run: |
+          node scripts/task.mjs build
+          tarball_dir="$RUNNER_TEMP/npm-release"
+          stage="$RUNNER_TEMP/agsx-package"
+          mkdir -p "$tarball_dir" "$stage"
+          cp -a .test-build/candidate "$stage/pkg"
+          # Pack outside the private Bun workspace. bun pm pack walks up to the
+          # catalog root when run inside this repository.
+          (
+            cd "$stage/pkg"
+            bun pm pack --destination "$tarball_dir"
+          )
+          shopt -s nullglob
+          tarballs=("$tarball_dir"/*.tgz)
+          if [ "${#tarballs[@]}" -ne 1 ]; then
+            echo "expected exactly one tarball in $tarball_dir" >&2
+            ls -la "$tarball_dir" >&2 || true
+            exit 1
+          fi
+          tarball="${tarballs[0]}"
+          echo "TARBALL=$tarball" >> "$GITHUB_ENV"
+          tar -xOf "$tarball" package/package.json > "$RUNNER_TEMP/packed-package.json"
+          node -e "const j=require(process.argv[1]); const text=JSON.stringify(j); if (text.includes('catalog:')) { console.error('packed package.json still contains catalog:'); process.exit(1); } if (j.private === true) { console.error('packed package is private'); process.exit(1); } if (j.name !== process.env.PACKAGE_NAME || j.version !== process.env.PACKAGE_VERSION) { console.error('packed identity mismatch', j.name, j.version); process.exit(1); } if (j.dependencies || j.devDependencies) { console.error('standalone package must not publish workspace dependencies'); process.exit(1); }" "$RUNNER_TEMP/packed-package.json"
+          local_integrity="$(node -e "const fs=require('fs'); const crypto=require('crypto'); process.stdout.write('sha512-'+crypto.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "$tarball")"
+          echo "LOCAL_INTEGRITY=$local_integrity" >> "$GITHUB_ENV"
+          echo "packed $tarball integrity=$local_integrity"
+      - name: Publish
+        run: |
+          if [ "${NPM_ALREADY_PUBLISHED:-false}" = "true" ]; then
+            echo "${PACKAGE_NAME}@${PACKAGE_VERSION} is already on npm; skipping npm publish."
+            exit 0
+          fi
+          npm install -g npm@11.16.0
+          npm publish "$TARBALL" --registry https://registry.npmjs.org --access public --tag "${NPM_DIST_TAG}" --provenance
+      - name: Verify npm package, dist-tag, and provenance
+        run: |
+          attestation_url=""
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            published_version="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --registry https://registry.npmjs.org 2>/tmp/npm-view.err || true)"
+            integrity="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" dist.integrity --registry https://registry.npmjs.org 2>/tmp/npm-integrity.err || true)"
+            dist_tag_version="$(npm view "$PACKAGE_NAME" "dist-tags.${NPM_DIST_TAG}" --registry https://registry.npmjs.org 2>/tmp/npm-dist-tag.err || true)"
+            attestation_url="$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" dist.attestations.url --registry https://registry.npmjs.org 2>/tmp/npm-attestation.err || true)"
+            if [ "$published_version" = "$PACKAGE_VERSION" ] && [ "$integrity" = "$LOCAL_INTEGRITY" ] && [ "$dist_tag_version" = "$PACKAGE_VERSION" ] && [ -n "$attestation_url" ]; then
+              break
+            fi
+            echo "npm release evidence not visible yet. version=$published_version integrity=$integrity tag=$NPM_DIST_TAG:$dist_tag_version provenance=$attestation_url" >&2
+            if [ "$attempt" = "12" ]; then
+              cat /tmp/npm-view.err /tmp/npm-integrity.err /tmp/npm-dist-tag.err /tmp/npm-attestation.err >&2 || true
+              exit 1
+            fi
+            sleep 20
+          done
+          export NPM_ATTESTATION_URL="$attestation_url"
+          node <<'NODE_PROVENANCE'
+          (async () => {
+            const response = await fetch(process.env.NPM_ATTESTATION_URL);
+            if (!response.ok) throw new Error(`Unable to fetch npm attestation: ${response.status}`);
+            const document = await response.json();
+            const attestation = document.attestations?.find((item) => item.predicateType === "https://slsa.dev/provenance/v1");
+            if (!attestation?.bundle?.dsseEnvelope?.payload) throw new Error("SLSA provenance statement is missing");
+            const statement = JSON.parse(Buffer.from(attestation.bundle.dsseEnvelope.payload, "base64").toString("utf8"));
+            const [scope, unscoped] = process.env.PACKAGE_NAME.startsWith("@") ? process.env.PACKAGE_NAME.slice(1).split("/") : ["", process.env.PACKAGE_NAME];
+            const purlName = scope ? `%40${scope}/${unscoped}` : unscoped;
+            const expectedSubject = `pkg:npm/${purlName}@${process.env.PACKAGE_VERSION}`;
+            const expectedSha512 = Buffer.from(process.env.LOCAL_INTEGRITY.replace(/^sha512-/, ""), "base64").toString("hex");
+            const subjectMatches = statement.subject?.some((subject) => subject.name === expectedSubject && subject.digest?.sha512 === expectedSha512);
+            const definition = statement.predicate?.buildDefinition;
+            const workflow = definition?.externalParameters?.workflow;
+            const dependencyMatches = definition?.resolvedDependencies?.some((dependency) => dependency.digest?.gitCommit === process.env.RELEASE_COMMIT);
+            const expectedRepository = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}`;
+            const expectedRef = `refs/tags/${process.env.RELEASE_TAG}`;
+            if (!subjectMatches) throw new Error("Provenance subject does not match the locally packed release");
+            if (workflow?.repository !== expectedRepository) throw new Error("Provenance repository mismatch");
+            if (workflow?.path !== ".github/workflows/publish.yml") throw new Error("Provenance workflow mismatch");
+            if (workflow?.ref !== expectedRef) throw new Error("Provenance ref mismatch");
+            if (!dependencyMatches) throw new Error("Provenance commit does not match the release tag");
+            if (statement.predicate?.runDetails?.builder?.id !== "https://github.com/actions/runner/github-hosted") throw new Error("Provenance builder is not GitHub-hosted Actions");
+          })().catch((error) => { console.error(error); process.exit(1); });
+          NODE_PROVENANCE
+      - name: Generate release notes
+        run: |
+          git fetch --tags
+          node <<'NODE'
+          const { execFileSync } = require("node:child_process");
+          const { writeFileSync } = require("node:fs");
+
+          const packageName = process.env.PACKAGE_NAME;
+          const currentVersion = process.env.PACKAGE_VERSION;
+          const currentTag = process.env.RELEASE_TAG;
+
+          function run(command, args) {
+            return execFileSync(command, args, { encoding: "utf8" }).trim();
+          }
+
+          const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?$/;
+
+          function semver(value) {
+            return semverPattern.test(value);
+          }
+
+          function parts(value) {
+            const match = value.match(semverPattern);
+            if (!match) throw new Error(`Invalid semver: ${value}`);
+            return { core: [BigInt(match[1]), BigInt(match[2]), BigInt(match[3])], pre: match[4]?.split(".") ?? [] };
+          }
+
+          function compare(left, right) {
+            const l = parts(left);
+            const r = parts(right);
+            for (let index = 0; index < 3; index += 1) {
+              if (l.core[index] !== r.core[index]) return l.core[index] < r.core[index] ? -1 : 1;
+            }
+            if (l.pre.length === 0) return r.pre.length === 0 ? 0 : 1;
+            if (r.pre.length === 0) return -1;
+            for (let index = 0; index < Math.max(l.pre.length, r.pre.length); index += 1) {
+              if (l.pre[index] === undefined) return -1;
+              if (r.pre[index] === undefined) return 1;
+              if (l.pre[index] === r.pre[index]) continue;
+              const ln = /^\d+$/.test(l.pre[index]);
+              const rn = /^\d+$/.test(r.pre[index]);
+              if (ln && rn) {
+                if (l.pre[index].length !== r.pre[index].length) return l.pre[index].length - r.pre[index].length;
+                return l.pre[index] < r.pre[index] ? -1 : 1;
+              }
+              if (ln) return -1;
+              if (rn) return 1;
+              return l.pre[index] < r.pre[index] ? -1 : 1;
+            }
+            return 0;
+          }
+
+          function tagExists(tag) {
+            try {
+              execFileSync("git", ["rev-parse", "-q", "--verify", `refs/tags/${tag}`], { stdio: "ignore" });
+              return true;
+            } catch {
+              return false;
+            }
+          }
+
+          const rawVersions = run("npm", ["view", packageName, "versions", "--json", "--registry", "https://registry.npmjs.org"]);
+          const parsed = JSON.parse(rawVersions || "[]");
+          const versions = (Array.isArray(parsed) ? parsed : [parsed]).filter((value) => typeof value === "string" && semver(value));
+          const previousVersion = versions.filter((version) => compare(version, currentVersion) < 0).sort(compare).at(-1);
+          const previousTag = previousVersion && tagExists(`v${previousVersion}`) ? `v${previousVersion}` : "";
+          const range = previousTag ? `${previousTag}..${currentTag}` : currentTag;
+
+          let rawLog = "";
+          try {
+            rawLog = run("git", ["log", "--format=%H%x1f%s%x1f%b%x1e", range]);
+          } catch {
+            rawLog = "";
+          }
+
+          const sections = [
+            ["breaking", "Breaking Changes"],
+            ["feat", "Features"],
+            ["fix", "Fixes"],
+            ["perf", "Performance"],
+            ["refactor", "Refactors"],
+            ["docs", "Docs"],
+            ["test", "Tests"],
+            ["maintenance", "Maintenance"],
+            ["other", "Other"],
+          ];
+          const groups = Object.fromEntries(sections.map(([key]) => [key, []]));
+          const typeMap = new Map([
+            ["feat", "feat"],
+            ["fix", "fix"],
+            ["perf", "perf"],
+            ["refactor", "refactor"],
+            ["docs", "docs"],
+            ["test", "test"],
+            ["chore", "maintenance"],
+            ["build", "maintenance"],
+            ["ci", "maintenance"],
+          ]);
+
+          for (const entry of rawLog.split("\x1e")) {
+            const trimmed = entry.trim();
+            if (!trimmed) continue;
+            const [sha = "", subject = "", body = ""] = trimmed.split("\x1f");
+            if (/^chore: release v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(subject)) continue;
+            const match = subject.match(/^([a-zA-Z]+)(?:\(([^)]+)\))?(!)?:\s+(.+)$/);
+            const breaking = Boolean(match?.[3]) || /(^|\n)BREAKING CHANGE:/m.test(body);
+            const type = match?.[1]?.toLowerCase() ?? "";
+            const scope = match?.[2] ? `**${match[2]}:** ` : "";
+            const summary = match?.[4] ?? subject;
+            const item = `${scope}${summary} (${sha.slice(0, 7)})`;
+            if (breaking) {
+              groups.breaking.push(item);
+              continue;
+            }
+            groups[typeMap.get(type) ?? "other"].push(item);
+          }
+
+          const lines = [`# ${currentTag}`, ""];
+          if (previousTag) {
+            lines.push(`Changes since ${previousTag}.`, "");
+          }
+          let wroteSection = false;
+          for (const [key, title] of sections) {
+            const items = groups[key];
+            if (items.length === 0) continue;
+            wroteSection = true;
+            lines.push(`## ${title}`, "");
+            for (const item of items) lines.push(`- ${item}`);
+            lines.push("");
+          }
+          if (!wroteSection) {
+            lines.push("No user-facing changes.", "");
+          }
+          writeFileSync("release-notes.md", lines.join("\n"));
+          NODE
+      - name: Create GitHub Release
+        run: |
+          export GH_TOKEN="${{ github.token }}"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file release-notes.md
+          else
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file release-notes.md --verify-tag
+          fi

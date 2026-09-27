@@ -1,8 +1,15 @@
 # Security boundaries
 
+Report a vulnerability through GitHub private vulnerability reporting:
+
+https://github.com/yoyooyooo/agsx/security/advisories/new
+
+Do not include credentials, tokens, or production transcripts. The supported
+release is the current npm `latest` version. There is no separate long-term
+support line and no guaranteed response time.
+
 This is an npm-distributed companion, not an authentication authority, policy engine,
-OS sandbox or replacement GitHub CLI. Report defects privately to the repository
-owner before publication; do not include credentials or production transcripts.
+OS sandbox or replacement GitHub CLI.
 
 ## Credentials and targets
 

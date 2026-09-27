@@ -27,7 +27,9 @@ agsx
 
 使用 `npm install -g @yoyooyoooyoooo/agsx`，或加 `@<version>` 选择明确版本。升级仍然使用 npm；agsx 没有 package/install/upgrade/release 命令，没有自更新、版本切换或候选目录管理。
 
-维护者在干净源码执行 `bun install --frozen-lockfile`、`npm test`、`npm run build`，然后 `npm publish .test-build/candidate --access public`。固定构建目录只是开发输出，不是机器运行目录；npm 负责安装布局与完整性。根目录保留 Bun catalog 的开发依赖，不发布根工作区。
+维护者在干净源码执行 `bun install --frozen-lockfile`、`npm test` 和 `npm run format:check`。根目录保留 Bun catalog 的开发依赖，不发布根工作区。`npm run build` 生成的 `.test-build/candidate` 只是开发输出。
+
+`0.2.0` 已经由维护者本机发布。之后的版本从干净的 `main` 执行 `bun run release -- <version>`，只推送 annotated tag。GitHub Actions 构建独立包并用 Trusted Publishing 发布。不要再对根目录或候选目录执行本机 `npm publish`。
 
 ## 状态与 I/O
 
