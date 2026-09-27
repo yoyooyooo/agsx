@@ -14,7 +14,8 @@ agsx
 │   ├── show       查看所属身份、关联质量和环境文件位置
 │   └── end        撤销这个运行凭据，清理其确切本地凭据文件
 ├── association
-│   └── show       查询一个 AGS PR 的 run 与 provider 关联
+│   ├── show       查询一个 AGS PR 的 run 与 provider 关联
+│   └── collect    收集已创建 PR 的 AGS／Forgejo 链接；只读，可限时等待
 ├── ci
 │   └── backend    查询服务器选择的 CI 后端，不代理检查/日志命令
 └── package
@@ -34,6 +35,31 @@ agsx
 独立 API 网关还需要服务器显式设置 `AGS_API_BASE_URL`，使 jobs、logs、分页等机器跟随的 API 链接指向网关，而不是把 HTTP Git 端口强改成 HTTPS。Git remote 和回调的原 `BASE_URL` 不必变化。
 
 没有 Context 的第二份全局默认配置。主机登录归官方 gh；source/repo 选择不会从旧 ~/.ags-cli、Agent Kit registry 或私有部署 manifest 猜测。
+
+## 创建后一次收集两条地址
+
+原版 `gh pr create` 只打印一个原生 PR URL，不会自动显示扩展字段。需要在同一次 Agent shell 调用里得到 Forgejo 地址时，用显式的只读收集器：
+
+```bash
+pr_url="$(gh pr create --base main --title 'A change' --body 'Description')" &&
+  agsx association collect --url "$pr_url" --wait-seconds 5
+```
+
+`&&` 保留创建成功与后续读取的边界；gh 失败就不运行收集器。不要改成忽略前一条命令状态，也不要因 Forgejo 未就绪重跑整段创建。
+
+收集器不执行 `gh pr create`，不解析或接管其业务参数，不写配置，不调用 Forgejo API。它只用 origin 与官方 gh 配置解析确定的 AGS API，在这个 API 上读取同一个原生 PR。输入 URL 只用于匹配 host/repository/number，不会被当作携带凭据的网络地址；短名与 FQDN 必须已在 gh 配置中指向同一个 API 才作为别名接受。
+
+输出沿用 JSON envelope，`data` 为 `agsx.pr-links.v1`，其中：
+
+- `ags`：原 URL、编号、仓库，以及本次读取是否核实成功；它不是“收集器创建了 PR”的声明。
+- `forgejo`：记录的外部编号／地址与 `projected | pending | not_observed | failed | unavailable | conflict`；只有真实保存的映射才能提供地址。已知地址但 head 尚未同步时返回地址和 `currentHead: false`，不冒充当前提交已投影。
+- `readOnly: true`、`retryCreation: false`：可重做关联查询，不应重做创建。
+
+默认等待 5 秒，范围 0–30 秒；0 表示只读一次（该次请求最长 5 秒）。等待预算从身份解析完成后开始，单次请求及整体轮询都受限。仅对 pending／尚未观察到映射继续 GET；认证失败、错误响应或未知状态不自动重试。取消时释放在途读取。没有映射也没有 job 不能证明 Forgejo 被禁用，因此标为 `not_observed`，不猜 `disabled`。
+
+有效 URL 已绑定当前仓库之后，投影查询失败仍返回原 URL 与分类状态，不将它变成“创建失败”。输入错误、目标冲突和命令取消则保持非零退出码。所有情况下都没有 POST 重放。这里省的是 Agent 的额外决策轮次，不承诺省去服务端异步投影所需的内部 GET。
+
+该能力在独立开发分支验证；发行和安装该分支之前，原有已安装候选不会自动获得新命令。
 
 ## 会话环境
 

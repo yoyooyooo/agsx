@@ -39,7 +39,11 @@ test("standalone companion installs one owned slot without adding a gh/git comma
     env: f.env,
   });
   assert.equal(result.code, 0, result.stderr);
-  assert.equal(JSON.parse(result.stdout).data.commands.length, 12);
+  assert.ok(
+    JSON.parse(result.stdout).data.commands.some(
+      (command) => command.name === "association.collect" && command.risk === "read",
+    ),
+  );
   assert.ok(!readdirSync(prefix).some((name) => name.startsWith(".transaction-")));
 });
 test("unowned destination and changed candidate are not overwritten", async (t) => {

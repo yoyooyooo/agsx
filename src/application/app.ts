@@ -19,6 +19,7 @@ import { setup } from "./setup.js";
 import { doctor } from "./doctor.js";
 import { startSession, showSession, endSession } from "./session.js";
 import { inspectAssociation } from "./connection.js";
+import { collectAssociation } from "./collect.js";
 import { packageCommand } from "../packaging/package.js";
 
 const execute = (name: string, input: Input) =>
@@ -42,6 +43,7 @@ const execute = (name: string, input: Input) =>
     if (name === "session.start") return yield* startSession(input);
     if (name === "session.show") return yield* showSession(input);
     if (name === "session.end") return yield* endSession(input);
+    if (name === "association.collect") return yield* collectAssociation(input);
     if (name === "association.show" || name === "ci.backend")
       return yield* inspectAssociation(input, name === "ci.backend");
     return yield* packageCommand(name, input);

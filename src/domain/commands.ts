@@ -86,6 +86,12 @@ export const COMMANDS: readonly CommandSpec[] = [
     { ...gh, number: N },
   ),
   command(
+    "association.collect",
+    "Collect native and Forgejo links after official gh creation; bounded read-only observation, never a second create.",
+    "read",
+    { ...gh, url: S, waitSeconds: optional(N) },
+  ),
+  command(
     "ci.backend",
     "Inspect the repository's server-selected CI backend; does not run or replace gh CI commands.",
     "read",

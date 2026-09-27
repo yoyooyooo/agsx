@@ -2,11 +2,15 @@
 
 ## 已实现
 
-这是官方 Git/gh 的独立配套组件，保留 12 个附属入口，不再保留此前的 50 命令替代客户端。普通 repo/pr/run、Git 代理、grant 控制面、独立 Context registry、operator 平台与 git-shim 源码已经移除；归属见 feature-parity.md。
+这是官方 Git/gh 的独立配套组件，保留围绕接入、关联和安装的附属入口，不再保留此前的 50 命令替代客户端。普通 repo/pr/run、Git 代理、grant 控制面、独立 Context registry、operator 平台与 git-shim 源码已经移除；归属见 feature-parity.md。
 
 实现了：单主机官方 gh 配置计划/核验/更新、origin 与覆盖变量诊断、任务边界运行身份、一次性环境清单、标准 URL-scoped Git credential helper、PR 运行/provider 关联查询、服务器 CI 选择查询，以及可验证的单槽安装。现有团队客户端和个人凭据没有被替换。
 
 Effect v4 beta 的服务/层/Schema 与 Node 资源边界保留；Bun 只安装。包是独立 Node bundle，不带 gh 二进制、Bun 运行时或历史安装目录。当前仍 private、禁止自动发布，没有新公共远端。
+
+## 已创建 PR 的链接收集
+
+`association.collect --url <native-pr-url>` 是只读收集器，供官方 gh 创建成功后在同一 shell 调用里补齐 Forgejo 地址。它只读已记录映射，pending／失败／未知不会重复创建，也不改原版 gh 的输出。实现与测试在独立分支；主发布工作区、已安装候选和生产服务器未自动变更。
 
 ## 验证入口
 
