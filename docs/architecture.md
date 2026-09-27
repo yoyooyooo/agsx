@@ -12,7 +12,7 @@ Git 托管、PR 投影、CI 后端与 merge authority 是独立选择。AGS 提�
 src/domain        少量附属命令的 Schema、结构化错误、上下文标识
 src/platform      Node HTTP、进程、输入、文件权限与原子写入
 src/application   setup / doctor / session / association
-src/packaging     本地候选包核验、单槽安装与中断恢复
+npm               包分发、安装与升级；不属于 CLI 的运行时能力
 ```
 
 Effect Context/Layer 拥有可替换资源边界。HTTP、进程和输入均有截止时间、取消、输出上限与作用域释放；不将一个大 Promise 包进 Effect 冒充资源管理。Node 是运行时，Bun 只负责精确 catalog/lock 安装。

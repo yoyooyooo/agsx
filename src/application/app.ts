@@ -9,7 +9,7 @@ import {
   validateInput,
   type Input,
 } from "../domain/commands.js";
-import { attempt, invariant, record, EXIT_CODES } from "../domain/errors.js";
+import { attempt, invariant, record, problem, EXIT_CODES } from "../domain/errors.js";
 import type { RuntimeOptions } from "../domain/model.js";
 import { settingsLayer } from "../platform/store.js";
 import { processLayer } from "../platform/process.js";
@@ -20,7 +20,6 @@ import { doctor } from "./doctor.js";
 import { startSession, showSession, endSession } from "./session.js";
 import { inspectAssociation } from "./connection.js";
 import { collectAssociation } from "./collect.js";
-import { packageCommand } from "../packaging/package.js";
 
 const execute = (name: string, input: Input) =>
   Effect.gen(function* () {
@@ -46,7 +45,9 @@ const execute = (name: string, input: Input) =>
     if (name === "association.collect") return yield* collectAssociation(input);
     if (name === "association.show" || name === "ci.backend")
       return yield* inspectAssociation(input, name === "ci.backend");
-    return yield* packageCommand(name, input);
+    return yield* Effect.fail(
+      problem("invalid_input", "Unsupported companion command.", "dispatch"),
+    );
   });
 export const program = (argv: readonly string[], options: RuntimeOptions) =>
   Effect.scoped(

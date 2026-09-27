@@ -1,4 +1,4 @@
-AGS CLI independent rebuild (development name: agsx)
+agsx - AGS companion
 Copyright 2026 AGS CLI contributors
 
 This project's new implementation is offered under Apache-2.0.
@@ -12,6 +12,5 @@ retains dependency legal comments and emits THIRD-PARTY-NOTICES.txt from the
 exact installed packages contributing to that bundle. Effect and its platform
 packages are MIT licensed; YAML is ISC licensed. No GitHub CLI binary is bundled.
 
-Publication, package name, contribution ownership review and production rollout
-remain separate explicit maintainer decisions. This development package is
-private and does not claim published-package or live-server acceptance.
+Package publication does not imply production rollout or live-server acceptance.
+Existing team clients and their credentials are not changed by npm installation.

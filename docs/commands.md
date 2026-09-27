@@ -18,13 +18,16 @@ agsx
 │   └── collect    收集已创建 PR 的 AGS／Forgejo 链接；只读，可限时等待
 ├── ci
 │   └── backend    查询服务器选择的 CI 后端，不代理检查/日志命令
-└── package
-    ├── inspect
-    ├── verify
-    └── install    显式目录、单套安装，不接管 npm 或当前团队客户端
+└── --version      当前 npm 包版本
 ```
 
 普通 `repo/pr/run` 操作、检查与日志、Git push 不在这个命令树里：用官方 gh / Git。没有 grant 命令，没有自动生成的 git/gh shim，没有失败时改走另一条写入路径。
+
+## 安装、升级与发布
+
+使用 `npm install -g @yoyooyoooyoooo/agsx`，或加 `@<version>` 选择明确版本。升级仍然使用 npm；agsx 没有 package/install/upgrade/release 命令，没有自更新、版本切换或候选目录管理。
+
+维护者在干净源码执行 `bun install --frozen-lockfile`、`npm test`、`npm run build`，然后 `npm publish .test-build/candidate --access public`。固定构建目录只是开发输出，不是机器运行目录；npm 负责安装布局与完整性。根目录保留 Bun catalog 的开发依赖，不发布根工作区。
 
 ## 状态与 I/O
 
@@ -59,7 +62,7 @@ pr_url="$(gh pr create --base main --title 'A change' --body 'Description')" &&
 
 有效 URL 已绑定当前仓库之后，投影查询失败仍返回原 URL 与分类状态，不将它变成“创建失败”。输入错误、目标冲突和命令取消则保持非零退出码。所有情况下都没有 POST 重放。这里省的是 Agent 的额外决策轮次，不承诺省去服务端异步投影所需的内部 GET。
 
-该能力在独立开发分支验证；发行和安装该分支之前，原有已安装候选不会自动获得新命令。
+该能力包含于 0.2.0 源码。发布状态以 npm registry 为准，旧的已安装版本不会自动获得新命令。
 
 ## 会话环境
 

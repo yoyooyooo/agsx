@@ -1,101 +1,75 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fixture, call, child } from "./helpers.mjs";
+import { fixture } from "./helpers.mjs";
 
 const candidate = resolve(".test-build/candidate");
-test("standalone companion installs one owned slot without adding a gh/git command surface", async (t) => {
-  const f = fixture(t),
-    prefix = join(f.root, "installed");
-  const checked = await call(f, "package.verify", { directory: candidate });
-  const digest = checked.result.data.digest;
-  const plan = await call(f, "package.install", {
-    directory: candidate,
-    prefix,
-    expectedDigest: digest,
-  });
-  assert.equal(plan.result.status, "planned");
-  assert.ok(!existsSync(prefix));
-  const installed = await call(f, "package.install", {
-    directory: candidate,
-    prefix,
-    expectedDigest: digest,
-    apply: true,
-  });
-  assert.equal(installed.result.data.retainedVersions, 1);
-  assert.equal(installed.result.data.shellPathChanged, false);
-  const again = await call(f, "package.install", {
-    directory: candidate,
-    prefix,
-    expectedDigest: digest,
-    apply: true,
-  });
-  assert.equal(again.result.data.unchanged, true);
-  for (const name of ["releases", "current", "previous", "dist/git-shim.js"])
-    assert.ok(!existsSync(join(prefix, name)));
-  const result = await child(process.execPath, [join(prefix, "dist/cli.js"), "schema"], {
-    cwd: f.cwd,
-    env: f.env,
-  });
-  assert.equal(result.code, 0, result.stderr);
-  assert.ok(
-    JSON.parse(result.stdout).data.commands.some(
-      (command) => command.name === "association.collect" && command.risk === "read",
-    ),
+const metadata = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8"));
+
+// Test the real consumer path, not an application-owned replacement installer.
+test("npm pack and global install produce an independent CLI without lifecycle hooks", (t) => {
+  const f = fixture(t);
+  const packed = spawnSync(
+    "npm",
+    ["pack", candidate, "--json", "--ignore-scripts", "--pack-destination", f.root],
+    { encoding: "utf8", timeout: 30000 },
   );
-  assert.ok(!readdirSync(prefix).some((name) => name.startsWith(".transaction-")));
-});
-test("unowned destination and changed candidate are not overwritten", async (t) => {
-  const f = fixture(t),
-    copy = join(f.root, "candidate"),
-    prefix = join(f.root, "foreign");
-  cpSync(candidate, copy, { recursive: true });
-  mkdirSync(prefix, { mode: 0o700 });
-  writeFileSync(join(prefix, "keep"), "unchanged");
-  const checked = await call(f, "package.verify", { directory: copy });
-  await assert.rejects(
-    call(f, "package.install", {
-      directory: copy,
+  assert.equal(packed.status, 0, packed.stderr);
+  const record = JSON.parse(packed.stdout)[0];
+  const files = record.files.map((file) => file.path);
+  assert.ok(files.includes("dist/cli.js"));
+  assert.ok(files.includes("dist/credential-helper.js"));
+  assert.ok(files.includes("THIRD-PARTY-NOTICES.txt"));
+  assert.ok(files.every((path) => !/^(?:src|test|node_modules|\.git|\.agsx)\//.test(path)));
+  assert.equal(metadata.name, "@yoyooyoooyoooo/agsx");
+  assert.equal(metadata.private, undefined);
+  assert.equal(metadata.scripts, undefined);
+  assert.equal(metadata.dependencies, undefined);
+  const prefix = join(f.root, "npm");
+  const installed = spawnSync(
+    "npm",
+    [
+      "install",
+      "--global",
+      "--prefix",
       prefix,
-      expectedDigest: checked.result.data.digest,
-      apply: true,
-    }),
-    (e) => e.code === "conflict",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      join(f.root, record.filename),
+    ],
+    { encoding: "utf8", timeout: 30000 },
   );
-  assert.equal(readFileSync(join(prefix, "keep"), "utf8"), "unchanged");
-  writeFileSync(join(copy, "dist/cli.js"), "unexpected bytes");
-  await assert.rejects(
-    call(f, "package.verify", { directory: copy }),
-    (e) => e.code === "integrity_error",
-  );
+  assert.equal(installed.status, 0, installed.stderr);
+  const command = join(prefix, "bin/agsx");
+  const version = spawnSync(command, ["--version"], { encoding: "utf8", timeout: 5000 });
+  assert.equal(version.status, 0, version.stderr);
+  assert.equal(version.stdout.trim(), metadata.version);
+  const result = spawnSync(command, ["schema"], { encoding: "utf8", timeout: 5000 });
+  assert.equal(result.status, 0, result.stderr);
+  const names = JSON.parse(result.stdout).data.commands.map((command) => command.name);
+  assert.ok(names.includes("association.collect"));
+  assert.ok(names.every((name) => !/^(?:package|release|upgrade|version)\./.test(name)));
+  assert.ok(!existsSync(join(f.root, ".agsx/installation")));
 });
-test("interrupted single-slot installation cannot execute a half-installed companion", async (t) => {
-  const f = fixture(t),
-    prefix = join(f.root, "installed");
-  const checked = await call(f, "package.verify", { directory: candidate });
-  await call(f, "package.install", {
-    directory: candidate,
-    prefix,
-    expectedDigest: checked.result.data.digest,
-    apply: true,
-  });
-  writeFileSync(
-    join(prefix, ".installing.json"),
-    JSON.stringify({ schema: "agsx.installing.v1", digest: checked.result.data.digest }),
-    { mode: 0o600 },
-  );
-  const result = await child(process.execPath, [join(prefix, "dist/cli.js"), "schema"], {
-    cwd: f.cwd,
-    env: f.env,
-  });
-  assert.equal(result.code, 5);
-  assert.equal(JSON.parse(result.stdout).error.stage, "startup");
-  await call(f, "package.install", {
-    directory: candidate,
-    prefix,
-    expectedDigest: checked.result.data.digest,
-    apply: true,
-  });
-  assert.ok(!existsSync(join(prefix, ".installing.json")));
+
+test("retired package management is rejected rather than silently retained", (t) => {
+  const f = fixture(t);
+  for (const command of [
+    "package.install",
+    "package.verify",
+    "package.inspect",
+    "release",
+    "upgrade",
+  ]) {
+    const result = spawnSync(process.execPath, [join(candidate, "dist/cli.js"), command], {
+      encoding: "utf8",
+      timeout: 5000,
+      env: { ...process.env, AGSX_HOME: f.home },
+    });
+    assert.notEqual(result.status, 0);
+    assert.equal(JSON.parse(result.stdout).error.code, "invalid_input");
+  }
 });

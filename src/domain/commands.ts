@@ -97,16 +97,6 @@ export const COMMANDS: readonly CommandSpec[] = [
     "read",
     { ...gh },
   ),
-  command("package.inspect", "Inspect this companion's build and runtime identity.", "read"),
-  command("package.verify", "Verify an explicit local candidate's content manifest.", "read", {
-    directory: S,
-  }),
-  command(
-    "package.install",
-    "Install one verified candidate into an empty/owned slot, without version archives.",
-    "local-write",
-    { directory: S, prefix: S, expectedDigest: S },
-  ),
 ];
 export type Input = Readonly<Record<string, unknown>> & { readonly apply?: boolean };
 export function findCommand(name: string): CommandSpec {

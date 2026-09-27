@@ -1,6 +1,6 @@
 # Security boundaries
 
-This is an unpublished companion, not an authentication authority, policy engine,
+This is an npm-distributed companion, not an authentication authority, policy engine,
 OS sandbox or replacement GitHub CLI. Report defects privately to the repository
 owner before publication; do not include credentials or production transcripts.
 

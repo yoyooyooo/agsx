@@ -21,7 +21,7 @@
 | invocation 对所有写入的二次协议                           | 退役                                          | 仅 session setup 的未知结果使用 UUID 收口；不包裹普通 gh 输出            |
 | required CI 本地猜测                                      | 禁止                                          | 服务端提供真实事实；未知不能变成空成功                                   |
 | provider账户/SQL/docker/主站磁盘运维                      | 移出日常客户端                                | 不复制旧工具的机器控制台；由各服务明确运维入口负责                       |
-| 独立安装与本地候选核验                                    | package.inspect/verify/install                | 单槽、有界临时产物，不维护 current/previous 多版本集合                   |
+| 独立安装与本地候选核验                                    | npm install / npm publish                     | 使用 npm 标准能力，CLI 不内置安装、升级、发布或版本切换                  |
 | JSON/schema/退出码                                        | 限于附属命令                                  | 不重写官方 gh 的成熟交互与 JSON 选择                                     |
 
 ## 两仓联合故事

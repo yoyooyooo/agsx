@@ -33,7 +33,10 @@ function scan(dir) {
 }
 function boundary() {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  if (pkg.private !== true) throw new Error("This rebuild is not authorized for publication.");
+  if (pkg.private !== true)
+    throw new Error(
+      "The catalog development workspace is private; npm publishes the bundled package.",
+    );
   for (const [name, version] of Object.entries(pkg.workspaces.catalog)) {
     if (!/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(version))
       throw new Error(`Catalog is not exact: ${name}`);
@@ -131,16 +134,13 @@ async function standalone() {
   const metadata = {
     name: original.name,
     version: original.version,
-    private: true,
+    description: original.description,
+    publishConfig: { access: "public", registry: "https://registry.npmjs.org" },
     type: "module",
     license: original.license,
     engines: original.engines,
     bin: original.bin,
     agsx: original.agsx,
-    scripts: {
-      prepublishOnly:
-        "node -e \"throw new Error('Publication is not authorized for this rebuild')\"",
-    },
   };
   writeFileSync(join(directory, "package.json"), JSON.stringify(metadata, null, 2) + "\n");
   for (const name of [
@@ -178,7 +178,6 @@ async function standalone() {
     runtime: "node",
     nodeMinimum: "22.18.0",
     dependencies,
-    releaseState: "unpublished-rebuild",
     files,
   };
   writeFileSync(join(directory, "build-manifest.json"), JSON.stringify(manifest, null, 2) + "\n");

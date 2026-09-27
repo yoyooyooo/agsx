@@ -118,7 +118,7 @@ export const NodeHttpLive = Layer.succeed(HttpTransport, {
         const headers: Record<string, string> = {
           Accept: "application/json",
           Connection: "close",
-          "User-Agent": "agsx/0.0.0-rebuild",
+          "User-Agent": "agsx",
           ...input.headers,
         };
         invariant(

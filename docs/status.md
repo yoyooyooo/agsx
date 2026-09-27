@@ -1,31 +1,25 @@
-# 开发阶段状态
+# 当前状态
 
-## 已实现
+agsx 是官方 Git／gh 的独立附属组件。当前 0.2.0 源码保留 setup、doctor、session、association（含创建后链接收集）和 CI backend 查询；不复制普通 PR／CI 命令。
 
-这是官方 Git/gh 的独立配套组件，保留围绕接入、关联和安装的附属入口，不再保留此前的 50 命令替代客户端。普通 repo/pr/run、Git 代理、grant 控制面、独立 Context registry、operator 平台与 git-shim 源码已经移除；归属见 feature-parity.md。
+## 发行与安装
 
-实现了：单主机官方 gh 配置计划/核验/更新、origin 与覆盖变量诊断、任务边界运行身份、一次性环境清单、标准 URL-scoped Git credential helper、PR 运行/provider 关联查询、服务器 CI 选择查询，以及可验证的单槽安装。现有团队客户端和个人凭据没有被替换。
+只通过 npm 发布和安装。没有内置 package/install/upgrade/release 命令，没有版本切换或自更新。根目录是使用 Bun catalog 的 private 开发工作区；`npm run build` 生成独立包，维护者使用普通 `npm publish .test-build/candidate --access public` 发布。版本存在与否以 registry 实际结果为准，源码版本不冒充已发布版本。
 
-Effect v4 beta 的服务/层/Schema 与 Node 资源边界保留；Bun 只安装。包是独立 Node bundle，不带 gh 二进制、Bun 运行时或历史安装目录。当前仍 private、禁止自动发布，没有新公共远端。
+运行使用 Node.js 22.18+；Bun 只负责 install。`npm test` 包含真实 npm pack 和隔离 global install，验证不依赖源码或开发 node_modules 即可运行。包不携带官方 gh、生产凭据或安装历史。
 
-## 已创建 PR 的链接收集
+## 使用边界
 
-`association.collect --url <native-pr-url>` 是只读收集器，供官方 gh 创建成功后在同一 shell 调用里补齐 Forgejo 地址。它只读已记录映射，pending／失败／未知不会重复创建，也不改原版 gh 的输出。实现与测试在独立分支；主发布工作区、已安装候选和生产服务器未自动变更。
+官方 gh 创建 PR；`association.collect` 只 GET 已创建 PR 的映射，以明确限时方式返回 AGS／Forgejo 链接。pending、failed、unavailable 不重放创建；地址与 head 同步事实分开。
 
-## 验证入口
+任务身份在启动边界准备一次，继承合法原生身份，不引入 per-command grants。关联可 provisional/unlinked，不因此阻断已授权的普通协作。没有后台续期，任务启动器负责结束会话。
 
-- `node scripts/task.mjs check`：类型、构建、边界检查，以及本地协议/HTTP/TLS/进程/凭据/helper/单槽安装测试。
-- `node scripts/task.mjs format-check`：统一格式。
-- `node scripts/compat.mjs --server-checkout <explicit-fork>`：构建候选与所选 Fork 的联合验证。Fork 脚本使用固定官方 gh，所有服务在 loopback-only namespace。
-- 机器可读联合结果由所选 server checkout 的 `.test-build/gh-native.json` 拥有；source commit、dirty 状态和 companion source 以当次实际构建回执为准，不把旧 SHA 当永久基线。
+软件安装不会切换 AGS 主站、修改 Git remote 或配置 provider 凭据。普通 gh 的兼容修复归服务端；真实 Multica 启动器迁移、全 provider 对等和机器部署完成都需要各自证据，不在源码测试中作完成声明。
 
-联合流程已实际走过 setup → task environment → 系统 Git push → 官方 gh PR create → 关联查询 → 撤销。它还检查原版 gh 的双 CI backend 读取、日志、namespace ID 隔离和标准 expected-head 合并。GitHub/provider 服务在该流程中是符合真实 API 形状的隔离 fixture，不是生产任务。
+## 验证
 
-## 不冒充已经完成的工作
-
-- 没有发布、注册新包名、创建公共远端或迁移现有团队客户端。
-- 没有修改 mini/imile/CCS 的 HTTPS/证书、tailnet 或生产 CI 配置。
-- 没有改造真实 Multica 任务启动器；任务环境需要预先建立原生 AGS Agent 身份，不会回退到 Human/管理员或旧 per-command grant。
-- 无后台自动续期；任务启动器负责选择 TTL、应用一次环境清单并结束会话。
-- 官方 gh 完整平台兼容、所有 provider API、操作系统 keyring 沙箱隔离均不在此声明范围。
-- 源码有 CI workflow 不代表新仓库的远端 CI 已运行。发布与线上切换仍需明确授权及目标环境验收。
+```bash
+bun install --frozen-lockfile
+npm test
+npm run format:check
+```

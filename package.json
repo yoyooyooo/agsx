@@ -1,6 +1,6 @@
 {
-  "name": "agsx",
-  "version": "0.0.0-rebuild.1",
+  "name": "@yoyooyoooyoooo/agsx",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Official Git/gh companion for AGS host setup, task identity and cross-tool association.",
@@ -13,8 +13,7 @@
     "agsx": "dist/cli.js"
   },
   "agsx": {
-    "schema": "agsx.package.v1",
-    "releaseState": "unpublished-rebuild"
+    "schema": "agsx.package.v1"
   },
   "files": [
     "dist",
@@ -58,7 +57,6 @@
     "test": "node scripts/task.mjs test",
     "typecheck": "node scripts/task.mjs typecheck",
     "format": "node scripts/task.mjs format",
-    "format:check": "node scripts/task.mjs format-check",
-    "prepublishOnly": "node scripts/no-publish.mjs"
+    "format:check": "node scripts/task.mjs format-check"
   }
 }
