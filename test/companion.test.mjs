@@ -281,6 +281,116 @@ test("standard Git credential protocol is exact-host/repository bound and never 
   assert.ok(git.stdout.includes(p.sessions.get(active.id).token));
 });
 
+for (const ambientSource of [
+  "global-helper",
+  "repository-url-helper",
+  "GIT_ASKPASS",
+  "SSH_ASKPASS",
+  "global-askpass",
+  "repository-askpass",
+]) {
+  test(`task Git ignores ambient ${ambientSource} outside its scope and after expiry`, async (t) => {
+    const f = fixture(t),
+      p = ports(f),
+      directory = join(f.root, "task"),
+      marker = join(f.root, "ambient-called"),
+      canary = join(f.root, "ambient.mjs"),
+      globalConfig = join(f.env.HOME, ".gitconfig");
+    const quote = (value) => "'" + value.replace(/'/g, "'\\''") + "'";
+    writeFileSync(
+      canary,
+      `#!${process.execPath}\n` +
+        `import { appendFileSync } from "node:fs";\n` +
+        `appendFileSync(${JSON.stringify(marker)}, "called\\n", { mode: 0o600 });\n` +
+        `process.stdout.write(process.argv[2] === "get" ? "username=ambient\\npassword=synthetic-human\\n\\n" : "synthetic-human\\n");\n`,
+      { mode: 0o700 },
+    );
+    writeFileSync(globalConfig, "", { mode: 0o600 });
+    const helper = `!${quote(process.execPath)} ${quote(canary)}`;
+    const ambient = { ...f.env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" };
+    const git = (args, env = ambient, input) => child("git", args, { cwd: f.cwd, env, input });
+    assert.equal((await git(["init", "--quiet"])).code, 0);
+    assert.equal(
+      (await git(["remote", "add", "origin", "https://ags.example.test/team/project.git"])).code,
+      0,
+    );
+    if (ambientSource === "global-helper")
+      assert.equal(
+        (await git(["config", "--file", globalConfig, "--add", "credential.helper", helper])).code,
+        0,
+      );
+    else if (ambientSource === "repository-url-helper") {
+      for (const target of [
+        "https://ags.example.test/team/project.git",
+        "https://ags.example.test/team/other.git",
+        "https://foreign.example.test/team/project.git",
+      ])
+        assert.equal(
+          (await git(["config", "--local", "--add", `credential.${target}.helper`, helper])).code,
+          0,
+        );
+    } else if (ambientSource.endsWith("-askpass"))
+      assert.equal(
+        (
+          await git([
+            "config",
+            ...(ambientSource === "global-askpass" ? ["--file", globalConfig] : ["--local"]),
+            "core.askPass",
+            canary,
+          ])
+        ).code,
+        0,
+      );
+    else f.env[ambientSource] = ambient[ambientSource] = canary;
+    const request = (host = "ags.example.test", path = "team/project.git") =>
+      `protocol=https\nhost=${host}\npath=${path}\ncapability[]=authtype\ncapability[]=state\n\n`;
+    const calls = () =>
+      existsSync(marker) ? readFileSync(marker, "utf8").split("\n").length - 1 : 0;
+    // Prove the installed canary can answer a real Git request before isolation.
+    const control = await git(["credential", "fill"], ambient, request("foreign.example.test"));
+    assert.equal(control.code, 0, control.stderr);
+    assert.match(control.stdout, /password=synthetic-human/);
+    const originalCalls = calls();
+    const originalConfig = readFileSync(globalConfig);
+    const localConfig = join(f.cwd, ".git/config");
+    const originalLocalConfig = readFileSync(localConfig);
+    const active = await provided(
+      f,
+      startSession({ gh: process.execPath, directory, apply: true }),
+      p.transport,
+      p.processes,
+    );
+    const manifest = JSON.parse(readFileSync(active.environmentFile, "utf8"));
+    const env = { ...f.env };
+    for (const key of manifest.unset) delete env[key];
+    Object.assign(env, manifest.set, { GIT_CONFIG_NOSYSTEM: "1" });
+    const good = await git(["credential", "fill"], env, request());
+    assert.equal(good.code, 0, good.stderr);
+    assert.ok(good.stdout.includes(p.sessions.get(active.id).token));
+    assert.equal(calls(), originalCalls);
+    const denied = [];
+    for (const input of [
+      request("ags.example.test", "team/other.git"),
+      request("foreign.example.test"),
+    ])
+      denied.push(await git(["credential", "fill"], env, input));
+    const saved = JSON.parse(readFileSync(join(directory, "session.json"), "utf8"));
+    saved.expiresAt = "2000-01-01T00:00:00.000Z";
+    writeFileSync(join(directory, "session.json"), JSON.stringify(saved), { mode: 0o600 });
+    denied.push(await git(["credential", "fill"], env, request()));
+    for (const result of denied) {
+      assert.notEqual(result.code, 0);
+      assert.equal(result.stdout, "");
+      assert.ok(!result.stderr.includes(p.sessions.get(active.id).token));
+    }
+    assert.equal(calls(), originalCalls, "Task Git must not call an ambient helper or AskPass");
+    assert.equal(env.GIT_TERMINAL_PROMPT, "0");
+    assert.ok(!env.GIT_ASKPASS && !env.SSH_ASKPASS);
+    assert.deepEqual(readFileSync(globalConfig), originalConfig);
+    assert.deepEqual(readFileSync(localConfig), originalLocalConfig);
+  });
+}
+
 test("missing optional source context does not block native identity and siblings remain isolated", async (t) => {
   const f = fixture(t),
     p = ports(f);
