@@ -29,6 +29,8 @@ session.start 在任务开始时，使用官方 gh 中该主机的原生账号�
 
 Git credential helper 是 Git 的标准协议扩展点，不是同名 git 可执行文件。它只响应精确协议/主机/仓库范围内的凭据请求，支持 Git 重复的认证协商 metadata，不接受重复的目标字段。它不执行 shell 用户片段或 Git 命令，不向其他主机给出 token。
 
+任务环境先用进程级 `credential.helper` 空值清除继承的 helper，再安装允许 URL 范围内的私有 helper。这个 reset 也覆盖未匹配的主机和仓库，避免 Git 改用全局或仓库本地的 Human helper。环境同时覆盖 `core.askPass` 为空、移除 `GIT_ASKPASS` / `SSH_ASKPASS` 并设置 `GIT_TERMINAL_PROMPT=0`；范围不匹配或 session 到期后，Git 不能再通过提问取得另一身份。所有配置只通过该任务的 `GIT_CONFIG_*` 与环境清单生效，不改用户 Git 配置文件。
+
 ## 认证与关联
 
 原生账号决定权限和 PR 作者。source/Agent/Task/Run 只补充上下文；自报值标为 provisional，空值 unlinked。可选 source 校验由 AGS 的固定 connector 完成；验证后仍必须绑定当前原生账号，不能将任意 metadata 当成换身份或授权的依据。

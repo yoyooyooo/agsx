@@ -32,6 +32,8 @@ source/Task/Run 为空 => unlinked；自报但未验证 => provisional；可选 
 
 本地 active receipt 仅保存 token 指纹，明文只在任务私有 gh/hosts.yml。environment.json 不含明文凭据。结束精确清理自己的文件，父账号与其他任务不受影响。
 
+启动器须完整应用 environment.json 的 `unset` 和 `set`，不能只设置 `GH_CONFIG_DIR` 或复制 URL-scoped helper。清单的进程级 helper reset 与 AskPass/终端提示禁用共同保证：正常范围使用私有运行凭据，其他范围和到期 session 拒绝，不落回继承的 Human helper 或交互凭据。测试通过真实 `git credential fill` 验证全局、仓库 URL helper 及环境/配置 AskPass 的正向 canary 和隔离结果；不修改宿主配置。
+
 ## CI 不是 Git 托管或 merge authority
 
 服务器配置选择 native、none 或一个具名 CI 后端。Forgejo 和 GitHub Actions 适配器使用各自真实 API 形状。run/job 的公开数值 ID 是带后端身份命名空间的稳定映射；更换 API origin 或 external repository 后，不会把旧 ID 当成新后端同号任务。

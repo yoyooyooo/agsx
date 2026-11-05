@@ -242,9 +242,16 @@ export const startSession = (input: Input) =>
       const helper = `!${quote(process.execPath)} ${quote(join(packageRoot(), "dist/credential-helper.js"))} ${quote(prepared.directory)}`;
       const set: Record<string, string> = {
         GH_CONFIG_DIR: join(prepared.directory, "gh"),
+        GIT_TERMINAL_PROMPT: "0",
         ...(parent.caFile ? { SSL_CERT_FILE: parent.caFile, GIT_SSL_CAINFO: parent.caFile } : {}),
       };
       let count = 0;
+      // Clear inherited helpers for every target, including unmatched URLs.
+      // A refused credential must not fall through to an ambient prompt either.
+      for (const key of ["credential.helper", "core.askPass"]) {
+        set[`GIT_CONFIG_KEY_${count}`] = key;
+        set[`GIT_CONFIG_VALUE_${count++}`] = "";
+      }
       for (const scope of unique) {
         const scopeURL = scope.origin + (scope.repository ? "/" + scope.repository + ".git" : "");
         for (const value of ["", helper]) {
@@ -263,6 +270,8 @@ export const startSession = (input: Input) =>
           "GITHUB_TOKEN",
           "GH_ENTERPRISE_TOKEN",
           "GITHUB_ENTERPRISE_TOKEN",
+          "GIT_ASKPASS",
+          "SSH_ASKPASS",
           ...Object.keys(settings.options.env).filter((key) =>
             /^(GIT_CONFIG_|GIT_TRACE|GIT_CURL_VERBOSE)/.test(key),
           ),
